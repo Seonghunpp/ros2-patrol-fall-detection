@@ -1,0 +1,17 @@
+# ===== colcon 빌드 산출물 (절대 올리지 않음 — 각자 colcon build 하면 생김) =====
+build/
+install/
+log/
+
+# ===== 파이썬 캐시 =====
+__pycache__/
+*.pyc
+*.egg-info/
+*.egg
+
+# ===== 에디터/OS =====
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
