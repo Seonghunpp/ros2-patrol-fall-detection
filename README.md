@@ -11,6 +11,7 @@ TurtleBot3 기반 **병실 순찰 로봇** — Nav2로 병실을 순회하며 Ar
 ## 주요 패키지
 
 | 노드 | 역할 |
+|------|------|
 | `waypoint_saver` | 병실 좌표 저장 |
 | `patrol` | 순찰 + 마커 정렬 + 환자 확인 |
 | `aruco_id` | 마커 ID/offset 인지 |
@@ -31,7 +32,9 @@ TurtleBot3 기반 **병실 순찰 로봇** — Nav2로 병실을 순회하며 Ar
 
 ## 실행
 Pi 
+
 `ros2 launch turtlebot3_bringup robot.launch.py`
+
 ```bash
 ros2 run v4l2_camera v4l2_camera_node --ros-args \
 -p video_device:="/dev/video0" \
@@ -39,10 +42,15 @@ ros2 run v4l2_camera v4l2_camera_node --ros-args \
 -p camera_info_url:="file:///home/team3/camera_info.yaml"
 ```
 Ubuntu
+
 맵 저장
+
 `ros2 launch turtlebot3_cartographer cartographer.launch.py`
+
 `ros2 run nav2_map_server map_saver_cli -f ~/map`
+
 맵 불러오기
+
 `ros2 launch turtlebot3_navigation2 navigation2.launch.py map:=$HOME/map.yaml`
 
 
