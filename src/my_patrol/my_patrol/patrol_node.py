@@ -7,12 +7,14 @@ rooms.yaml에 저장된 병실들을 Nav2로 순서대로 무한 순찰
 
   ros2 run my_patrol patrol
 """
+import math
 import os
 import time
 
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Twist
+from nav_msgs.msg import Odometry
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 from std_msgs.msg import Int32MultiArray, Bool, Float32
 import yaml
@@ -37,23 +39,40 @@ class MarkerListener(Node):
     MIN_TURN = 0.10       # 최소 회전(rad/s) — 모터 데드밴드 회피
     CENTER_TOL = 0.10     # 이 안에 들면 '중앙 정렬됨'(화면폭의 10%)
     SEEN_TIMEOUT = 0.4    # 이 시간(s) 안에 offset 오면 '마커 보임'
+    SEARCH_ANGLE = 400.0  # 탐색 시 회전할 각도(deg) — 360+여유로 누락 방지
+    SCAN_HALF = 50.0      # 낙상 스캔 시 중앙 기준 좌/우 각도(deg) — 45~60 권장
+    SCAN_SPEED = 0.2      # 낙상 스캔 회전속도(rad/s) — 느리게(YOLO 감지 시간 확보)
 
     def __init__(self):
         super().__init__('patrol_marker_listener')
         self.latest_ids = []
         self.latest_offset = 0.0
         self.offset_time = None
+        self.yaw = None       # odom 기반 현재 yaw(rad) — 탐색 회전각 측정용
+        self.fall = False     # /fall_detected 최신값
         self.create_subscription(Int32MultiArray, '/room_marker', self._id_cb, 10)
         self.create_subscription(Float32, '/marker_offset', self._offset_cb, 10)
+        self.create_subscription(Odometry, '/odom', self._odom_cb, 10)
+        self.create_subscription(Bool, '/fall_detected', self._fall_cb, 10)
         self.enable_pub = self.create_publisher(Bool, '/aruco_enable', 10)
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
     def _id_cb(self, msg):
         self.latest_ids = list(msg.data)
 
+    def _fall_cb(self, msg):
+        self.fall = msg.data
+
     def _offset_cb(self, msg):
         self.latest_offset = msg.data
         self.offset_time = time.time()
+
+    def _odom_cb(self, msg):
+        q = msg.pose.pose.orientation
+        # 쿼터니언 → yaw (z축 회전각)
+        siny = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        self.yaw = math.atan2(siny, cosy)
 
     def set_enable(self, on):
         self.enable_pub.publish(Bool(data=on))
@@ -62,25 +81,39 @@ class MarkerListener(Node):
         return (self.offset_time is not None and
                 time.time() - self.offset_time < self.SEEN_TIMEOUT)
 
-    def align_to_marker(self, timeout=15.0):
+    def align_to_marker(self, timeout=40.0):
         """마커를 찾아(탐색) 화면 중앙에 오도록 회전(정렬)한다.
 
-        정렬되면 마커 ID를 반환, 시간 내 못 찾으면 None. 끝나면 인식 끔.
+        탐색은 odom 실제 회전각이 SEARCH_ANGLE(기본 400°)에 도달할 때까지.
+        정렬되면 마커 ID를 반환, 못 찾으면 None. timeout은 odom 멈춤 등
+        대비한 안전장치. 끝나면 인식 끔.
         """
         self.latest_ids = []
         self.offset_time = None
         self.set_enable(True)               # 인식 ON
 
-        end = time.time() + timeout
+        target = math.radians(self.SEARCH_ANGLE)
+        rotated = 0.0                       # 누적 회전각(rad)
+        prev_yaw = self.yaw
+        end = time.time() + timeout         # 안전용 절대 타임아웃
         centered = False
+
         while time.time() < end and rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.05)
             tw = Twist()
 
             if not self._marker_visible():
-                # 1. 탐색: 제자리 회전하며 마커 찾기
+                # 1. 탐색: 제자리 회전 + 실제 회전각 누적
                 tw.angular.z = self.SEARCH_SPEED
+                if self.yaw is not None and prev_yaw is not None:
+                    d = self.yaw - prev_yaw
+                    d = math.atan2(math.sin(d), math.cos(d))  # -π~π 정규화
+                    rotated += abs(d)
+                prev_yaw = self.yaw
+                if rotated >= target:
+                    break                   # 목표각만큼 돌았는데 못 찾음 → 실패
             else:
+                prev_yaw = self.yaw         # 정렬 중엔 누적 기준만 갱신
                 off = self.latest_offset
                 if abs(off) < self.CENTER_TOL:
                     # 2. 중앙 정렬 완료 → 정지
@@ -98,6 +131,43 @@ class MarkerListener(Node):
         marker_id = self.latest_ids[0] if self.latest_ids else None
         self.set_enable(False)              # 인식 OFF
         return marker_id if centered else None
+
+    def _rotate_by(self, delta_deg):
+        """현재 위치에서 delta_deg(+왼/-오)만큼 천천히 회전.
+        도중 낙상(/fall_detected)이 잡히면 즉시 멈추고 True 반환."""
+        target = abs(math.radians(delta_deg))
+        direction = 1.0 if delta_deg >= 0 else -1.0
+        rotated = 0.0
+        prev_yaw = self.yaw
+        end = time.time() + (target / self.SCAN_SPEED) + 5.0  # 안전 타임아웃
+
+        while rotated < target and time.time() < end and rclpy.ok():
+            rclpy.spin_once(self, timeout_sec=0.05)
+            if self.fall:                       # 스캔 도중 낙상 감지
+                self.cmd_pub.publish(Twist())
+                return True
+            tw = Twist()
+            tw.angular.z = direction * self.SCAN_SPEED
+            self.cmd_pub.publish(tw)
+            if self.yaw is not None and prev_yaw is not None:
+                d = self.yaw - prev_yaw
+                d = math.atan2(math.sin(d), math.cos(d))
+                rotated += abs(d)
+            prev_yaw = self.yaw
+
+        self.cmd_pub.publish(Twist())
+        return False
+
+    def scan_for_fall(self):
+        """마커 중앙 기준 좌우(±SCAN_HALF)로 천천히 훑으며 낙상 감지.
+        낙상이 보이면 True, 끝까지 없으면 False. 끝나면 중앙 복귀."""
+        self.fall = False
+        half = self.SCAN_HALF
+        # 왼쪽 half → 오른쪽 2*half(왼끝→오른끝) → 중앙 복귀(왼쪽 half)
+        for delta in (half, -2 * half, half):
+            if self._rotate_by(delta):
+                return True
+        return False
 
 
 def load_rooms(path):
@@ -119,15 +189,35 @@ def make_pose(nav, c):
     return p
 
 
-def check_patient(nav, name):
-    """병실 도착 후 환자(낙상) 감지.
+def go_to(nav, point, label):
+    """한 지점으로 이동하고 도착까지 대기. 성공하면 True."""
+    nav.get_logger().info(f'Moving to {label}')
+    accepted = nav.goToPose(make_pose(nav, point))
+    if not accepted:
+        nav.get_logger().warn(f'✗ {label} goal rejected')
+        time.sleep(1.0)
+        return False
 
-    나중에 YOLO 낙상 감지 결과를 읽는 자리. 지금은 자리표시자.
+    while not nav.isTaskComplete():
+        time.sleep(0.1)  # CPU 점유 방지
+
+    result = nav.getResult()
+    if result == TaskResult.SUCCEEDED:
+        nav.get_logger().info(f'✔ {label} arrived')
+        return True
+    nav.get_logger().warn(f'✗ {label} nav failed ({result.name})')
+    return False
+
+
+def check_patient(nav, marker, name):
+    """병실 도착(마커 정렬 후) 환자(낙상) 감지.
+
+    마커 중앙 기준 좌우로 천천히 훑으며 /fall_detected를 감시한다.
     반환: True=정상, False=낙상 의심(알람)
     """
-    nav.get_logger().info(f'[{name}] Checking patient...')
-    time.sleep(2.0)
-    return True
+    nav.get_logger().info(f'[{name}] Checking patient (scanning)...')
+    fall = marker.scan_for_fall()
+    return not fall   # 낙상 감지되면 False(알람)
 
 
 def main():
@@ -152,39 +242,39 @@ def main():
     try:
         while rclpy.ok():
             for name, c in rooms.items():
-                nav.get_logger().info(f'Moving to {name}')
+                # 구버전 호환: hall/inside 없으면 c 자체를 병실 안 좌표로 사용
+                hall = c.get('hall')
+                inside = c.get('inside', c)
 
-                # goToPose는 목표가 '거부'되면 False를 반환한다.
-                # 반환값을 확인하지 않으면 이전 목표의 결과가 남아서
-                # 가짜로 '즉시 도착'한 것처럼 보임.
-                accepted = nav.goToPose(make_pose(nav, c))
-                if not accepted:
-                    nav.get_logger().warn(f'✗ {name} goal rejected')
-                    time.sleep(1.0)
+                # ── 1. 문 앞 복도로 이동 (복도끼리 이동이라 벽 안 건넘) ──
+                if hall is not None:
+                    if not go_to(nav, hall, f'{name} hall'):
+                        continue
+
+                # ── 2. 병실 안으로 진입 ──
+                if not go_to(nav, inside, f'{name} inside'):
+                    # 진입 실패해도 복도로는 빠져나옴
+                    if hall is not None:
+                        go_to(nav, hall, f'{name} hall (return)')
                     continue
 
-                while not nav.isTaskComplete():
-                    time.sleep(0.1)  # CPU 점유 방지 
-
-                result = nav.getResult()
-                if result == TaskResult.SUCCEEDED:
-                    nav.get_logger().info(f'✔ {name} Arrived')
-
-                    # ── 1. 마커 탐색 → 중앙 정렬 → ID 저장 ──
-                    nav.get_logger().info('   Searching for marker and aligning...')
-                    marker_id = marker.align_to_marker(timeout=15.0)
-                    if marker_id is not None:
-                        room_ids[name] = marker_id
-                        nav.get_logger().info(f'   Alignment successful, marker ID={marker_id} saved')
-                    else:
-                        nav.get_logger().warn('   Marker not found (search failed)')
-
-                    # ── 2. 환자(낙상) 감지 ──
-                    if not check_patient(nav, name):
-                        nav.get_logger().warn(f'🚨 {name} fall suspected — alarm')
-                        # 여기에 알람 동작(소리/메시지/호출) 추가
+                # ── 3. 마커 탐색 → 중앙 정렬 → ID 저장 ──
+                nav.get_logger().info('   Searching for marker and aligning...')
+                marker_id = marker.align_to_marker()
+                if marker_id is not None:
+                    room_ids[name] = marker_id
+                    nav.get_logger().info(f'   Alignment successful, marker ID={marker_id} saved')
                 else:
-                    nav.get_logger().warn(f'✗ {name} nav failed ({result.name})')
+                    nav.get_logger().warn('   Marker not found (search failed)')
+
+                # ── 4. 환자(낙상) 감지 ──
+                if not check_patient(nav, marker, name):
+                    nav.get_logger().warn(f'{name} fall suspected — alarm')
+                    # 여기에 알람 동작(소리/메시지/호출) 추가
+
+                # ── 5. 복도로 나오기 (다음 병실로 가기 전 복도 복귀) ──
+                if hall is not None:
+                    go_to(nav, hall, f'{name} hall (return)')
     except KeyboardInterrupt:
         nav.get_logger().info('Finished')
         nav.cancelTask()

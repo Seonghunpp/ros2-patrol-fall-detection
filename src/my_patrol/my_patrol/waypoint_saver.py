@@ -43,12 +43,36 @@ def main():
     # TF를 계속 받기 위해 백그라운드에서 spin
     threading.Thread(target=rclpy.spin, args=(node,), daemon=True).start()
 
+    def capture(prompt, allow_skip=False):
+        """안내 출력 후 Enter를 기다렸다가 현재 위치를 dict로 반환.
+        q -> 'q'(취소), s -> 's'(skip, allow_skip일 때만)."""
+        while rclpy.ok():
+            ans = input(prompt).strip().lower()
+            if ans == 'q':
+                return 'q'
+            if allow_skip and ans == 's':
+                return 's'
+            pose = node.current_pose()
+            if pose is None:
+                print('Unable to read current location. '
+                      'Check Nav2/AMCL is active and 2D Pose Estimate is set.')
+                continue
+            trans, rot = pose
+            return {
+                'x': round(trans.x, 3),
+                'y': round(trans.y, 3),
+                'z': round(rot.z, 4),
+                'w': round(rot.w, 4),
+            }
+
     rooms = {}
     print('=' * 50)
-    print(' save point')
-    print(' 1) Move the robot to the ward (RViz 2D Goal Pose)')
-    print(' 2) When you arrive, enter the ward name and press Enter')
-    print(' 3) When finished, type q.')
+    print(' save point (hall + inside)')
+    print(' 1) Enter the ward name')
+    print(' 2) Move robot to the hallway in front of the door, press Enter -> hall saved')
+    print('    (or press s to skip hall and save inside only)')
+    print(' 3) Move robot inside the ward, press Enter -> inside saved')
+    print(' 4) Type q at the name prompt to finish')
     print('=' * 50)
 
     while rclpy.ok():
@@ -57,19 +81,28 @@ def main():
             break
         if not name:
             continue
-        pose = node.current_pose()
-        if pose is None:
-            print('Unable to read the current location.'
-                  'Please ensure Nav2/AMCL is active and the initial pose (2D Pose Estimate) has been set.')
+
+        hall = capture(
+            f'[{name}] move to hallway in front of door, press Enter '
+            f'(s=skip hall, q=cancel): ',
+            allow_skip=True)
+        if hall == 'q':
             continue
-        trans, rot = pose
-        rooms[name] = {
-            'x': round(trans.x, 3),
-            'y': round(trans.y, 3),
-            'z': round(rot.z, 4),
-            'w': round(rot.w, 4),
-        }
-        print(f'  ✔ {name} Save: x={trans.x:.2f}, y={trans.y:.2f}')
+        if hall == 's':
+            hall = None  # 복도점 생략 → inside만 저장
+
+        inside = capture(f'[{name}] move inside the ward, press Enter (q=cancel): ')
+        if inside == 'q':
+            continue
+
+        if hall is None:
+            rooms[name] = {'inside': inside}
+            print(f'  ✔ {name} saved — inside=({inside["x"]:.2f},{inside["y"]:.2f}) '
+                  f'(hall skipped)')
+        else:
+            rooms[name] = {'hall': hall, 'inside': inside}
+            print(f'  ✔ {name} saved — hall=({hall["x"]:.2f},{hall["y"]:.2f}) '
+                  f'inside=({inside["x"]:.2f},{inside["y"]:.2f})')
 
     if rooms:
         os.makedirs(os.path.dirname(DEFAULT_ROOMS), exist_ok=True)
