@@ -30,7 +30,13 @@ class ArucoIdNode(Node):
         self.enabled = True   # /aruco_enable로 끌 수 있음 (기본 ON: 단독 테스트용)
 
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
-        self.params = cv2.aruco.DetectorParameters_create()
+        # OpenCV 4.7+ (신 API: ArucoDetector) / 4.6 이하 (구 API) 모두 지원
+        if hasattr(cv2.aruco, 'ArucoDetector'):
+            params = cv2.aruco.DetectorParameters()
+            self.detector = cv2.aruco.ArucoDetector(self.aruco_dict, params)
+        else:
+            self.detector = None
+            self.params = cv2.aruco.DetectorParameters_create()
         self.last_ids = None   # 직전 프레임의 ID 목록 (변할 때만 발행)
 
         # 압축 영상을 직접 구독 
@@ -59,8 +65,12 @@ class ArucoIdNode(Node):
         img = self.bridge.compressed_imgmsg_to_cv2(msg)      # 노드 내부에서 압축 풀기
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         h, w = gray.shape[:2]
-        corners, ids, _ = cv2.aruco.detectMarkers(
-            gray, self.aruco_dict, parameters=self.params)   # ID만 검출 (pose 없음)
+        # ID만 검출 (pose 없음) — OpenCV 버전에 맞는 방식 사용
+        if self.detector is not None:
+            corners, ids, _ = self.detector.detectMarkers(gray)          # 신 API
+        else:
+            corners, ids, _ = cv2.aruco.detectMarkers(
+                gray, self.aruco_dict, parameters=self.params)           # 구 API
 
         if ids is not None:
             # 첫 마커의 화면 좌우 위치(정렬용) — 매 프레임 발행
