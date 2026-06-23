@@ -16,7 +16,8 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Twist
 from nav_msgs.msg import Odometry
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
-from std_msgs.msg import Int32MultiArray, Bool, Float32
+from std_msgs.msg import Int32MultiArray, Bool, Float32, String
+from std_srvs.srv import SetBool
 import yaml
 
 # waypoint_saver가 저장하는 것과 같은 경로
@@ -42,6 +43,7 @@ class MarkerListener(Node):
     SEARCH_ANGLE = 400.0  # 탐색 시 회전할 각도(deg) — 360+여유로 누락 방지
     SCAN_HALF = 50.0      # 낙상 스캔 시 중앙 기준 좌/우 각도(deg) — 45~60 권장
     SCAN_SPEED = 0.2      # 낙상 스캔 회전속도(rad/s) — 느리게(YOLO 감지 시간 확보)
+    HOLD_SEC = 3.0        # 사람 감지 시 멈춰 응시할 최대 시간(s)
 
     def __init__(self):
         super().__init__('patrol_marker_listener')
@@ -50,11 +52,15 @@ class MarkerListener(Node):
         self.offset_time = None
         self.yaw = None       # odom 기반 현재 yaw(rad) — 탐색 회전각 측정용
         self.fall = False     # /fall_detected 최신값
+        self.status = 'NO_PERSON'  # /fall_status 최신값 (사람 유무 판단용)
         self.create_subscription(Int32MultiArray, '/room_marker', self._id_cb, 10)
         self.create_subscription(Float32, '/marker_offset', self._offset_cb, 10)
         self.create_subscription(Odometry, '/odom', self._odom_cb, 10)
         self.create_subscription(Bool, '/fall_detected', self._fall_cb, 10)
-        self.enable_pub = self.create_publisher(Bool, '/aruco_enable', 10)
+        self.create_subscription(String, '/fall_status', self._status_cb, 10)
+        # on/off는 SetBool 서비스 클라이언트로 호출 (응답 확인 가능)
+        self.aruco_cli = self.create_client(SetBool, 'aruco_enable')
+        self.fall_cli = self.create_client(SetBool, 'fall_enable')
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
     def _id_cb(self, msg):
@@ -62,6 +68,9 @@ class MarkerListener(Node):
 
     def _fall_cb(self, msg):
         self.fall = msg.data
+
+    def _status_cb(self, msg):
+        self.status = msg.data
 
     def _offset_cb(self, msg):
         self.latest_offset = msg.data
@@ -74,8 +83,21 @@ class MarkerListener(Node):
         cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         self.yaw = math.atan2(siny, cosy)
 
+    def _call_enable(self, client, on, name):
+        """SetBool 서비스로 on/off 요청하고 응답까지 대기(루프 밖 전환 시점에서만 호출)."""
+        if not client.wait_for_service(timeout_sec=0.5):
+            self.get_logger().warn(f'{name} service unavailable (skip)')
+            return
+        req = SetBool.Request()
+        req.data = on
+        future = client.call_async(req)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+
     def set_enable(self, on):
-        self.enable_pub.publish(Bool(data=on))
+        self._call_enable(self.aruco_cli, on, 'aruco_enable')
+
+    def set_fall_enable(self, on):
+        self._call_enable(self.fall_cli, on, 'fall_enable')
 
     def _marker_visible(self):
         return (self.offset_time is not None and
@@ -132,20 +154,44 @@ class MarkerListener(Node):
         self.set_enable(False)              # 인식 OFF
         return marker_id if centered else None
 
+    def hold_and_judge(self):
+        """그 자리에 멈춰 최대 HOLD_SEC초 응시하며 낙상 판단. 낙상이면 True."""
+        self.cmd_pub.publish(Twist())           # 정지
+        end = time.time() + self.HOLD_SEC
+        while time.time() < end and rclpy.ok():
+            rclpy.spin_once(self, timeout_sec=0.05)
+            if self.fall:                       # 응시 중 낙상 확정
+                return True
+        return False
+
     def _rotate_by(self, delta_deg):
         """현재 위치에서 delta_deg(+왼/-오)만큼 천천히 회전.
-        도중 낙상(/fall_detected)이 잡히면 즉시 멈추고 True 반환."""
+        - 낙상(/fall_detected)이 잡히면 즉시 멈추고 True 반환.
+        - 사람(/fall_status != NO_PERSON)이 새로 보이면 멈춰서 HOLD_SEC초 응시.
+          낙상이면 True, 아니면 회전 재개."""
         target = abs(math.radians(delta_deg))
         direction = 1.0 if delta_deg >= 0 else -1.0
         rotated = 0.0
         prev_yaw = self.yaw
-        end = time.time() + (target / self.SCAN_SPEED) + 5.0  # 안전 타임아웃
+        checked = False                         # 현재 시야의 사람을 이미 응시했는지
+        end = time.time() + (target / self.SCAN_SPEED) + self.HOLD_SEC + 5.0
 
         while rotated < target and time.time() < end and rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.05)
-            if self.fall:                       # 스캔 도중 낙상 감지
+
+            if self.fall:                       # 회전 중 낙상 감지
                 self.cmd_pub.publish(Twist())
                 return True
+
+            # 사람이 새로 보이면 멈춰서 응시 (한 사람당 1회)
+            if not checked and self.status != 'NO_PERSON':
+                if self.hold_and_judge():
+                    return True
+                checked = True                  # 이 사람 확인 완료 → 중복 멈춤 방지
+                prev_yaw = self.yaw             # 응시 후 회전 기준 갱신
+            if self.status == 'NO_PERSON':
+                checked = False                 # 사람이 사라지면 다음 사람 응시 가능
+
             tw = Twist()
             tw.angular.z = direction * self.SCAN_SPEED
             self.cmd_pub.publish(tw)
@@ -160,14 +206,20 @@ class MarkerListener(Node):
 
     def scan_for_fall(self):
         """마커 중앙 기준 좌우(±SCAN_HALF)로 천천히 훑으며 낙상 감지.
-        낙상이 보이면 True, 끝까지 없으면 False. 끝나면 중앙 복귀."""
+        낙상이 보이면 True, 끝까지 없으면 False. 끝나면 중앙 복귀.
+        스캔 동안만 YOLO를 켜고(주행 중엔 꺼서 CPU·렉 절약) 끝나면 끈다."""
         self.fall = False
+        self.status = 'NO_PERSON'
+        self.set_fall_enable(True)          # 낙상 감지 ON
         half = self.SCAN_HALF
+        found = False
         # 왼쪽 half → 오른쪽 2*half(왼끝→오른끝) → 중앙 복귀(왼쪽 half)
         for delta in (half, -2 * half, half):
             if self._rotate_by(delta):
-                return True
-        return False
+                found = True
+                break
+        self.set_fall_enable(False)         # 낙상 감지 OFF
+        return found
 
 
 def load_rooms(path):
@@ -224,7 +276,8 @@ def main():
     rclpy.init()
     nav = BasicNavigator()
     marker = MarkerListener()          # aruco_id 노드와 통신 (ID 읽기 + on/off)
-    marker.set_enable(False)           # 주행 중엔 인식 꺼짐
+    marker.set_enable(False)           # 주행 중엔 마커 인식 꺼짐
+    marker.set_fall_enable(False)      # 주행 중엔 낙상 감지(YOLO) 꺼짐
     room_ids = {}                      # 병실 이름 → 인식한 마커 ID 저장
     nav.get_logger().info('Waiting for Nav2 activation...')
     nav.waitUntilNav2Active()
@@ -279,7 +332,8 @@ def main():
         nav.get_logger().info('Finished')
         nav.cancelTask()
     finally:
-        marker.set_enable(False)       # 종료 시 인식 끄기
+        marker.set_enable(False)       # 종료 시 마커 인식 끄기
+        marker.set_fall_enable(False)  # 종료 시 낙상 감지 끄기
         marker.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

@@ -27,6 +27,7 @@ setup(
             'patrol = my_patrol.patrol_node:main',
             'marker_follower = my_patrol.marker_follower:main',
             'aruco_id = my_patrol.aruco_id_node:main',
+            'fall_detection = my_patrol.fall_detection_node:main',
         ],
     },
 )
