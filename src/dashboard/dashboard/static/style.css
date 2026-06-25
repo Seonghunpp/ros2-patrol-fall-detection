@@ -1,0 +1,264 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, "Noto Sans KR", sans-serif;
+    background: #f3f6fb;
+    color: #1f2937;
+}
+
+.header {
+    height: 82px;
+    padding: 18px 28px;
+    background: #ffffff;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 25px;
+}
+
+.header p {
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 14px;
+}
+
+.header-status {
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: #ecfdf5;
+    color: #047857;
+    font-weight: 700;
+}
+
+.dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    margin-right: 7px;
+    border-radius: 50%;
+    background: #22c55e;
+}
+
+.dashboard {
+    height: calc(100vh - 82px);
+    padding: 22px;
+    display: grid;
+    grid-template-columns: 1.45fr 1fr;
+    grid-template-rows: 1.55fr 0.85fr;
+    gap: 18px;
+}
+
+.card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+    overflow: hidden;
+}
+
+.card-title {
+    font-size: 18px;
+    font-weight: 800;
+    margin-bottom: 14px;
+}
+
+.video-card {
+    display: flex;
+    flex-direction: column;
+}
+
+.video-box {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    background: #111827;
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.video-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    background: #111827;
+}
+
+.live-badge {
+    position: absolute;
+    left: 14px;
+    top: 14px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: #dc2626;
+    color: #ffffff;
+    font-weight: 900;
+    font-size: 12px;
+}
+
+.video-toggle {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.toggle-btn {
+    flex: 1;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    transition: 0.15s;
+}
+
+.toggle-btn:hover {
+    background: #eef2f7;
+}
+
+.toggle-btn.active {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #ffffff;
+}
+
+.map {
+    height: calc(100% - 42px);
+    display: grid;
+    grid-template-columns: 1fr 0.58fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 12px;
+}
+
+.room {
+    border: 2px solid #d1d5db;
+    background: #f8fafc;
+    border-radius: 14px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    transition: 0.2s;
+}
+
+.room strong {
+    font-size: 19px;
+    margin-bottom: 6px;
+}
+
+.room span {
+    color: #64748b;
+    font-size: 13px;
+}
+
+.active-room {
+    background: #dcfce7;
+    border-color: #22c55e;
+    box-shadow: inset 0 0 0 2px rgba(34, 197, 94, 0.25);
+}
+
+.active-room strong {
+    color: #047857;
+}
+
+.corridor {
+    background: #e0f2fe;
+    border: 2px dashed #60a5fa;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.corridor span {
+    color: #2563eb;
+    font-weight: 800;
+}
+
+.robot-marker {
+    position: absolute;
+    bottom: 14px;
+    font-size: 24px;
+}
+
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.status-item {
+    padding: 16px;
+    border-radius: 14px;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+}
+
+.label {
+    display: block;
+    color: #64748b;
+    font-size: 13px;
+    margin-bottom: 6px;
+}
+
+.status-item strong {
+    font-size: 20px;
+    color: #2563eb;
+}
+
+.task-line {
+    margin-top: 14px;
+    padding: 13px 16px;
+    border-radius: 14px;
+    background: #ecfdf5;
+    color: #064e3b;
+    font-size: 16px;
+}
+
+.fall-box {
+    padding: 14px 16px;
+    background: #f8fafc;
+    border-radius: 14px;
+    border: 1px solid #e5e7eb;
+    margin-bottom: 12px;
+}
+
+.fall-box strong {
+    color: #dc2626;
+}
+
+.event-log {
+    height: calc(100% - 92px);
+    overflow-y: auto;
+}
+
+.event-item {
+    display: flex;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.event-item span {
+    min-width: 70px;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.event-item p {
+    margin: 0;
+    font-size: 14px;
+}
