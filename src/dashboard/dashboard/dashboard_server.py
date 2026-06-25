@@ -1,12 +1,11 @@
 import threading
 import time
 from flask import Flask, Response, jsonify, render_template
-from turtlebot3_msgs.msg import SensorState
 
 try:
     import rclpy
     from rclpy.node import Node
-    from sensor_msgs.msg import CompressedImage
+    from sensor_msgs.msg import CompressedImage, BatteryState #배터리 스테이트 추가
     from std_msgs.msg import String
     from nav_msgs.msg import Odometry  # * 이동 상태 수정 *
     from geometry_msgs.msg import Twist  # * 이동 상태 수정 *
@@ -97,8 +96,8 @@ class DashboardBridge(Node):
         )
 
         self.create_subscription(
-            SensorState,
-            "/sensor_state",
+            BatteryState,
+            "/battery_state",
             self.battery_callback,
             10
         )
@@ -177,11 +176,7 @@ class DashboardBridge(Node):
         global last_heartbeat
         last_heartbeat = time.time()  # * 네트워크 관련 추가 *
 
-        battery_voltage = float(msg.battery)
-        # 배터리 전압 계산 (11.5V = 0%, 12.5V = 100%)
-        min_voltage = 11.5
-        max_voltage = 12.5
-        battery_percent = max(0, min(100, int((battery_voltage - min_voltage) / (max_voltage - min_voltage) * 100)))
+        battery_percent = int(round(msg.percentage))
         state["battery"] = f"{battery_percent}%"
 
 
