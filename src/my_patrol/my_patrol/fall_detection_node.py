@@ -115,7 +115,7 @@ class FallDetectionNode(Node):
 
         self.status_pub = self.create_publisher(String, "/fall_status", 10)
         self.fall_pub = self.create_publisher(Bool, "/fall_detected", 10)
-        self.annotated_image_pub = self.create_publisher(  # * 영상 스트리밍 수정 *
+        self.annotated_image_pub = self.create_publisher(
             CompressedImage, "/image_annotated/compressed", 10
         )
 
@@ -255,14 +255,14 @@ class FallDetectionNode(Node):
         fall_msg.data = final_fall_detected
         self.fall_pub.publish(fall_msg)
 
-        # 관절/박스가 그려진 영상을 토픽으로 발행 (대시보드 YOLO 영상 전환용)  # * 영상 스트리밍 수정 *
-        ok, encoded = cv2.imencode(".jpg", frame)  # * 영상 스트리밍 수정 *
-        if ok:  # * 영상 스트리밍 수정 *
-            annotated_msg = CompressedImage()  # * 영상 스트리밍 수정 *
-            annotated_msg.header = msg.header  # * 영상 스트리밍 수정 *
-            annotated_msg.format = "jpeg"  # * 영상 스트리밍 수정 *
-            annotated_msg.data = encoded.tobytes()  # * 영상 스트리밍 수정 *
-            self.annotated_image_pub.publish(annotated_msg)  # * 영상 스트리밍 수정 *
+        # 관절/박스가 그려진 영상을 토픽으로 발행 (대시보드 YOLO 영상 전환용)
+        ok, encoded = cv2.imencode(".jpg", frame)
+        if ok:
+            annotated_msg = CompressedImage()
+            annotated_msg.header = msg.header
+            annotated_msg.format = "jpeg"
+            annotated_msg.data = encoded.tobytes()
+            self.annotated_image_pub.publish(annotated_msg)
 
         # 테스트용: 관절/박스가 그려진 영상을 창으로 표시
         if self.show:
