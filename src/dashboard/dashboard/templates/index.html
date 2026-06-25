@@ -102,9 +102,30 @@
     </section>
 </main>
 
+<!-- * 팝업 부분 수정 * -->
+<div id="fall-alert-overlay" class="fall-alert-overlay"> <!-- * 팝업 부분 수정 * -->
+    <div class="fall-alert-box"> <!-- * 팝업 부분 수정 * -->
+        <button class="fall-alert-close" onclick="closeFallAlert()">&times;</button> <!-- * 팝업 부분 수정 * -->
+        <div class="fall-alert-icon">⚠️</div> <!-- * 팝업 부분 수정 * -->
+        <div class="fall-alert-title">낙상 환자 감지</div> <!-- * 팝업 부분 수정 * -->
+        <div class="fall-alert-room" id="fall-alert-room"></div> <!-- * 팝업 부분 수정 * -->
+        <button class="fall-alert-confirm" onclick="closeFallAlert()">닫기</button> <!-- * 팝업 부분 수정 * -->
+    </div>
+</div>
+
 <script>
 let currentVideoMode = "raw";
 let lastYoloSignal = false;
+let lastSeenAlertId = null;  // * 팝업 부분 수정 *
+
+function showFallAlert(room) {  // * 팝업 부분 수정 *
+    document.getElementById("fall-alert-room").innerText = "병실 " + room;  // * 팝업 부분 수정 *
+    document.getElementById("fall-alert-overlay").style.display = "flex";  // * 팝업 부분 수정 *
+}  // * 팝업 부분 수정 *
+
+function closeFallAlert() {  // * 팝업 부분 수정 *
+    document.getElementById("fall-alert-overlay").style.display = "none";  // * 팝업 부분 수정 *
+}  // * 팝업 부분 수정 *
 
 function switchVideo(mode) {
     currentVideoMode = mode;
@@ -143,6 +164,13 @@ async function updateStatus() {
         if (currentVideoMode === "yolo") {
             document.getElementById("video-img").style.visibility = data.yolo_signal ? "visible" : "hidden";
         }
+
+        if (lastSeenAlertId === null) {  // * 팝업 부분 수정 *
+            lastSeenAlertId = data.fall_alert_id;  // * 팝업 부분 수정 *
+        } else if (data.fall_alert_id !== lastSeenAlertId) {  // * 팝업 부분 수정 *
+            lastSeenAlertId = data.fall_alert_id;  // * 팝업 부분 수정 *
+            showFallAlert(data.current_room);  // * 팝업 부분 수정 *
+        }  // * 팝업 부분 수정 *
 
         document.getElementById("robot-status").innerText = data.robot_status;
         document.getElementById("fall-status").innerText = data.fall_status;

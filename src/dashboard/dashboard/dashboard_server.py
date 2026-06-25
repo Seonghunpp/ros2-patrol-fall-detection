@@ -17,7 +17,7 @@ except Exception:
 app = Flask(__name__)
 
 latest_frame = None
-latest_annotated_frame = None  # * 영상 스트리밍 수정 *
+latest_annotated_frame = None
 last_heartbeat = 0.0
 
 NETWORK_TIMEOUT_SEC = 4.0
@@ -40,6 +40,7 @@ state = {
     "battery": "배터리 대기",
     "camera": "카메라 대기",
     "network": "네트워크 대기",
+    "fall_alert_id": 0,  # * 팝업 부분 수정 *
     "events": []
 }
 
@@ -61,12 +62,12 @@ class DashboardBridge(Node):
             10
         )
 
-        self.create_subscription(  # * 영상 스트리밍 수정 *
-            CompressedImage,  # * 영상 스트리밍 수정 *
-            "/image_annotated/compressed",  # * 영상 스트리밍 수정 *
-            self.annotated_image_callback,  # * 영상 스트리밍 수정 *
-            10  # * 영상 스트리밍 수정 *
-        )  # * 영상 스트리밍 수정 *
+        self.create_subscription(
+            CompressedImage,
+            "/image_annotated/compressed",
+            self.annotated_image_callback,
+            10
+        )
 
         self.create_subscription(
             String,
@@ -130,9 +131,9 @@ class DashboardBridge(Node):
         last_heartbeat = time.time()
         state["camera"] = "카메라 정상"
 
-    def annotated_image_callback(self, msg):  # * 영상 스트리밍 수정 *
-        global latest_annotated_frame  # * 영상 스트리밍 수정 *
-        latest_annotated_frame = bytes(msg.data)  # * 영상 스트리밍 수정 *
+    def annotated_image_callback(self, msg):
+        global latest_annotated_frame
+        latest_annotated_frame = bytes(msg.data)
 
     def room_callback(self, msg):
         old_room = state["current_room"]
@@ -184,6 +185,9 @@ class DashboardBridge(Node):
         if old_status != new_status:
             add_event(f"병실 {state['current_room']} 낙상 감지: {new_status}")
 
+        if new_status == "FALL" and old_status != "FALL":  # * 팝업 부분 수정 *
+            state["fall_alert_id"] += 1  # * 팝업 부분 수정 *
+
     def battery_callback(self, msg):
         global last_heartbeat
         last_heartbeat = time.time()
@@ -216,29 +220,29 @@ def video_feed():
     )
 
 
-@app.route("/video_feed_yolo")  # * 영상 스트리밍 수정 *
-def video_feed_yolo():  # * 영상 스트리밍 수정 *
-    def generate():  # * 영상 스트리밍 수정 *
-        while True:  # * 영상 스트리밍 수정 *
-            if latest_annotated_frame is not None:  # * 영상 스트리밍 수정 *
-                yield (  # * 영상 스트리밍 수정 *
+@app.route("/video_feed_yolo")
+def video_feed_yolo():
+    def generate():
+        while True:
+            if latest_annotated_frame is not None:
+                yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n" +
                     latest_annotated_frame +
                     b"\r\n"
                 )
-            time.sleep(0.03)  # * 영상 스트리밍 수정 *
+            time.sleep(0.03)
 
-    return Response(  # * 영상 스트리밍 수정 *
-        generate(),  # * 영상 스트리밍 수정 *
-        mimetype="multipart/x-mixed-replace; boundary=frame"  # * 영상 스트리밍 수정 *
-    )  # * 영상 스트리밍 수정 *
+    return Response(
+        generate(),
+        mimetype="multipart/x-mixed-replace; boundary=frame"
+    )
 
 
 @app.route("/api/status")
 def api_status():
-    # 분석 프레임을 한 번이라도 받은 적 있으면 계속 true (꺼져도 마지막 프레임 유지)  # * 영상 스트리밍 수정 *
-    state["yolo_signal"] = latest_annotated_frame is not None  # * 영상 스트리밍 수정 *
+    # 분석 프레임을 한 번이라도 받은 적 있으면 계속 true (꺼져도 마지막 프레임 유지)
+    state["yolo_signal"] = latest_annotated_frame is not None
     return jsonify(state)
 
 
