@@ -34,10 +34,10 @@ class FallJudge:
     def __init__(
         self,
         floor_ratio=0.55,
-        lie_ratio=1.2,
-        torso_ratio=0.8,
+        lie_ratio=1.0,
+        torso_ratio=0.6,
         keypoint_conf=0.35,
-        threshold_count=30,
+        threshold_count=20,
     ):
         self.floor_ratio = floor_ratio
         self.lie_ratio = lie_ratio
@@ -65,15 +65,14 @@ class FallJudge:
     def check(self, x1, y1, x2, y2, frame_h, keypoints, keypoint_scores):
         person_w = x2 - x1
         person_h = y2 - y1
-        center_y = (y1 + y2) / 2
-
-        in_floor_area = center_y > frame_h * self.floor_ratio
-
+        # 화면 위치(in_floor_area) 조건은 제거: 정면·저높이 카메라에선 바닥에 누운
+        # 사람이 화면 중앙에 잡혀서 위치 조건이 오히려 낙상을 막았음.
+        # 박스/몸통이 가로(누움)면 곧바로 낙상 후보로 본다.
         bbox_horizontal = person_w > person_h * self.lie_ratio
         torso_horizontal = self._is_torso_horizontal(keypoints, keypoint_scores)
 
         lying_pose = bbox_horizontal or torso_horizontal
-        fall_like = in_floor_area and lying_pose
+        fall_like = lying_pose
 
         if fall_like:
             self.fall_count += 1
