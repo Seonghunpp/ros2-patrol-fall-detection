@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>병실 모니터링 대시보드</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="header">
+    <div>
+        <h1>병실 모니터링 대시보드</h1>
+        <p>실시간 영상 · 병실 위치 · 로봇 상태 · 낙상 감지</p>
+    </div>
+    <div class="header-status">
+        <span class="dot"></span>
+        시스템 연결
+    </div>
+</header>
+
+<main class="dashboard">
+    <section class="card video-card">
+        <div class="card-title">실시간 영상</div>
+        <div class="video-box">
+            <img src="/video_feed" alt="실시간 영상">
+            <div class="live-badge">LIVE</div>
+        </div>
+    </section>
+
+    <section class="card map-card">
+        <div class="card-title">병실 지도 / 현재 위치</div>
+
+        <div class="map">
+            <div class="room" id="room-101">
+                <strong>병실 101</strong>
+                <span>좌측 상단</span>
+            </div>
+
+            <div class="corridor">
+                <span>중앙 복도</span>
+                <div class="robot-marker">🤖</div>
+            </div>
+
+            <div class="room" id="room-102">
+                <strong>병실 102</strong>
+                <span>우측 상단</span>
+            </div>
+
+            <div class="room" id="room-103">
+                <strong>병실 103</strong>
+                <span>좌측 하단</span>
+            </div>
+
+            <div class="corridor lower">
+                <span>이동 경로</span>
+            </div>
+
+            <div class="room" id="room-104">
+                <strong>병실 104</strong>
+                <span>우측 하단</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="card status-card">
+        <div class="card-title">로봇 동작 상태</div>
+
+        <div class="status-grid">
+            <div class="status-item">
+                <span class="label">이동 상태</span>
+                <strong id="robot-status">-</strong>
+            </div>
+            <div class="status-item">
+                <span class="label">배터리</span>
+                <strong id="battery">-</strong>
+            </div>
+            <div class="status-item">
+                <span class="label">카메라</span>
+                <strong id="camera">-</strong>
+            </div>
+            <div class="status-item">
+                <span class="label">네트워크</span>
+                <strong id="network">-</strong>
+            </div>
+        </div>
+
+        <div class="task-line">
+            현재 위치: <strong id="current-room-text">-</strong>
+        </div>
+    </section>
+
+    <section class="card log-card">
+        <div class="card-title">알림 / 이벤트 로그</div>
+        <div class="fall-box">
+            낙상 상태:
+            <strong id="fall-status">-</strong>
+        </div>
+        <div id="event-log" class="event-log"></div>
+    </section>
+</main>
+
+<script>
+async function updateStatus() {
+    try {
+        const res = await fetch("/api/status");
+        const data = await res.json();
+
+        document.querySelectorAll(".room").forEach(room => {
+            room.classList.remove("active-room");
+        });
+
+        const room = document.getElementById("room-" + data.current_room);
+        if (room) {
+            room.classList.add("active-room");
+        }
+
+        document.getElementById("robot-status").innerText = data.robot_status;
+        document.getElementById("fall-status").innerText = data.fall_status;
+        document.getElementById("battery").innerText = data.battery;
+        document.getElementById("camera").innerText = data.camera;
+        document.getElementById("network").innerText = data.network;
+        document.getElementById("current-room-text").innerText = "병실 " + data.current_room;
+
+        const log = document.getElementById("event-log");
+        log.innerHTML = "";
+
+        data.events.forEach(event => {
+            const item = document.createElement("div");
+            item.className = "event-item";
+            item.innerHTML = `<span>${event.time}</span><p>${event.text}</p>`;
+            log.appendChild(item);
+        });
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+setInterval(updateStatus, 1000);
+updateStatus();
+</script>
+</body>
+</html>
