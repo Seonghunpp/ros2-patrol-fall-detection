@@ -17,7 +17,7 @@ source ~/yolo-env/bin/activate
 pip install flask
 
 cd ~/ros2_ws/src/dashboard/dashboard
-export ROS_DOMAIN_ID=1
+export ROS_DOMAIN_ID=5
 python3 dashboard_server.py
 ```
 
