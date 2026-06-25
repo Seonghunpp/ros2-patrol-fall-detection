@@ -7,8 +7,8 @@ try:
     from rclpy.node import Node
     from sensor_msgs.msg import CompressedImage, BatteryState #배터리 스테이트 추가
     from std_msgs.msg import String
-    from nav_msgs.msg import Odometry  # * 이동 상태 수정 *
-    from geometry_msgs.msg import Twist  # * 이동 상태 수정 *
+    from nav_msgs.msg import Odometry
+    from geometry_msgs.msg import Twist
     ROS_AVAILABLE = True
 except Exception:
     ROS_AVAILABLE = False
@@ -17,20 +17,21 @@ except Exception:
 app = Flask(__name__)
 
 latest_frame = None
-last_heartbeat = 0.0  # * 네트워크 관련 추가 *
+latest_annotated_frame = None  # * 영상 스트리밍 수정 *
+last_heartbeat = 0.0
 
-NETWORK_TIMEOUT_SEC = 4.0  # * 네트워크 관련 추가 *
+NETWORK_TIMEOUT_SEC = 4.0
 
-LINEAR_MOVING_THRESHOLD = 0.02  # * 이동 상태 수정 *
-ANGULAR_MOVING_THRESHOLD = 0.05  # * 이동 상태 수정 *
+LINEAR_MOVING_THRESHOLD = 0.02
+ANGULAR_MOVING_THRESHOLD = 0.05
 
-CMD_VEL_TIMEOUT_SEC = 1.0  # * 이동 상태 수정 *
+CMD_VEL_TIMEOUT_SEC = 1.0
 
-last_odom_linear = 0.0  # * 이동 상태 수정 *
-last_odom_angular = 0.0  # * 이동 상태 수정 *
-last_cmd_vel_linear = 0.0  # * 이동 상태 수정 *
-last_cmd_vel_angular = 0.0  # * 이동 상태 수정 *
-last_cmd_vel_time = 0.0  # * 이동 상태 수정 *
+last_odom_linear = 0.0
+last_odom_angular = 0.0
+last_cmd_vel_linear = 0.0
+last_cmd_vel_angular = 0.0
+last_cmd_vel_time = 0.0
 
 state = {
     "current_room": "102",
@@ -38,7 +39,7 @@ state = {
     "fall_status": "정상",
     "battery": "배터리 대기",
     "camera": "카메라 대기",
-    "network": "네트워크 대기",  # * 네트워크 관련 추가 *
+    "network": "네트워크 대기",
     "events": []
 }
 
@@ -60,6 +61,13 @@ class DashboardBridge(Node):
             10
         )
 
+        self.create_subscription(  # * 영상 스트리밍 수정 *
+            CompressedImage,  # * 영상 스트리밍 수정 *
+            "/image_annotated/compressed",  # * 영상 스트리밍 수정 *
+            self.annotated_image_callback,  # * 영상 스트리밍 수정 *
+            10  # * 영상 스트리밍 수정 *
+        )  # * 영상 스트리밍 수정 *
+
         self.create_subscription(
             String,
             "/current_room",
@@ -74,14 +82,14 @@ class DashboardBridge(Node):
             10
         )
 
-        self.create_subscription(  # * 이동 상태 수정 *
+        self.create_subscription(
             Odometry,
             "/odom",
             self.odom_callback,
             10
         )
 
-        self.create_subscription(  # * 이동 상태 수정 *
+        self.create_subscription(
             Twist,
             "/cmd_vel",
             self.cmd_vel_callback,
@@ -102,12 +110,12 @@ class DashboardBridge(Node):
             10
         )
 
-        self.create_timer(1.0, self.check_network_callback)  # * 네트워크 관련 추가 *
-        self.create_timer(1.0, self.check_movement_callback)  # * 이동 상태 수정 *
+        self.create_timer(1.0, self.check_network_callback)
+        self.create_timer(1.0, self.check_movement_callback)
 
         self.get_logger().info("dashboard_bridge started")
 
-    def check_network_callback(self):  # * 네트워크 관련 추가 *
+    def check_network_callback(self):
         elapsed = time.time() - last_heartbeat
         old_network = state["network"]
         new_network = "네트워크 연결" if elapsed < NETWORK_TIMEOUT_SEC else "네트워크 대기"
@@ -119,8 +127,12 @@ class DashboardBridge(Node):
     def image_callback(self, msg):
         global latest_frame, last_heartbeat
         latest_frame = bytes(msg.data)
-        last_heartbeat = time.time()  # * 네트워크 관련 추가 *
+        last_heartbeat = time.time()
         state["camera"] = "카메라 정상"
+
+    def annotated_image_callback(self, msg):  # * 영상 스트리밍 수정 *
+        global latest_annotated_frame  # * 영상 스트리밍 수정 *
+        latest_annotated_frame = bytes(msg.data)  # * 영상 스트리밍 수정 *
 
     def room_callback(self, msg):
         old_room = state["current_room"]
@@ -133,20 +145,20 @@ class DashboardBridge(Node):
     def robot_status_callback(self, msg):
         state["robot_status"] = str(msg.data).strip()
 
-    def odom_callback(self, msg):  # * 이동 상태 수정 *
+    def odom_callback(self, msg):
         global last_heartbeat, last_odom_linear, last_odom_angular
         last_heartbeat = time.time()
         last_odom_linear = msg.twist.twist.linear.x
         last_odom_angular = msg.twist.twist.angular.z
 
-    def cmd_vel_callback(self, msg):  # * 이동 상태 수정 *
+    def cmd_vel_callback(self, msg):
         global last_heartbeat, last_cmd_vel_linear, last_cmd_vel_angular, last_cmd_vel_time
         last_heartbeat = time.time()
         last_cmd_vel_linear = msg.linear.x
         last_cmd_vel_angular = msg.angular.z
         last_cmd_vel_time = time.time()
 
-    def check_movement_callback(self):  # * 이동 상태 수정 *
+    def check_movement_callback(self):
         odom_moving = (
             abs(last_odom_linear) > LINEAR_MOVING_THRESHOLD
             or abs(last_odom_angular) > ANGULAR_MOVING_THRESHOLD
@@ -174,7 +186,7 @@ class DashboardBridge(Node):
 
     def battery_callback(self, msg):
         global last_heartbeat
-        last_heartbeat = time.time()  # * 네트워크 관련 추가 *
+        last_heartbeat = time.time()
 
         battery_percent = int(round(msg.percentage))
         state["battery"] = f"{battery_percent}%"
@@ -204,8 +216,29 @@ def video_feed():
     )
 
 
+@app.route("/video_feed_yolo")  # * 영상 스트리밍 수정 *
+def video_feed_yolo():  # * 영상 스트리밍 수정 *
+    def generate():  # * 영상 스트리밍 수정 *
+        while True:  # * 영상 스트리밍 수정 *
+            if latest_annotated_frame is not None:  # * 영상 스트리밍 수정 *
+                yield (  # * 영상 스트리밍 수정 *
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" +
+                    latest_annotated_frame +
+                    b"\r\n"
+                )
+            time.sleep(0.03)  # * 영상 스트리밍 수정 *
+
+    return Response(  # * 영상 스트리밍 수정 *
+        generate(),  # * 영상 스트리밍 수정 *
+        mimetype="multipart/x-mixed-replace; boundary=frame"  # * 영상 스트리밍 수정 *
+    )  # * 영상 스트리밍 수정 *
+
+
 @app.route("/api/status")
 def api_status():
+    # 분석 프레임을 한 번이라도 받은 적 있으면 계속 true (꺼져도 마지막 프레임 유지)  # * 영상 스트리밍 수정 *
+    state["yolo_signal"] = latest_annotated_frame is not None  # * 영상 스트리밍 수정 *
     return jsonify(state)
 
 

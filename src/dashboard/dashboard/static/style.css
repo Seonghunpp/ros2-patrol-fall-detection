@@ -71,9 +71,15 @@ body {
     margin-bottom: 14px;
 }
 
+.video-card {
+    display: flex;
+    flex-direction: column;
+}
+
 .video-box {
     position: relative;
-    height: calc(100% - 40px);
+    flex: 1;
+    min-height: 0;
     background: #111827;
     border-radius: 14px;
     overflow: hidden;
@@ -97,6 +103,35 @@ body {
     color: #ffffff;
     font-weight: 900;
     font-size: 12px;
+}
+
+.video-toggle {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.toggle-btn {
+    flex: 1;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    transition: 0.15s;
+}
+
+.toggle-btn:hover {
+    background: #eef2f7;
+}
+
+.toggle-btn.active {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #ffffff;
 }
 
 .map {
