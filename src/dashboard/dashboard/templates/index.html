@@ -21,8 +21,12 @@
     <section class="card video-card">
         <div class="card-title">실시간 영상</div>
         <div class="video-box">
-            <img src="/video_feed" alt="실시간 영상">
+            <img id="video-img" src="/video_feed" alt="실시간 영상">
             <div class="live-badge">LIVE</div>
+        </div>
+        <div class="video-toggle">
+            <button id="btn-raw" class="toggle-btn active" onclick="switchVideo('raw')">원본 영상</button>
+            <button id="btn-yolo" class="toggle-btn" onclick="switchVideo('yolo')">분석 영상</button>
         </div>
     </section>
 
@@ -99,6 +103,28 @@
 </main>
 
 <script>
+let currentVideoMode = "raw";
+let lastYoloSignal = false;
+
+function switchVideo(mode) {
+    currentVideoMode = mode;
+    const img = document.getElementById("video-img");
+    const btnRaw = document.getElementById("btn-raw");
+    const btnYolo = document.getElementById("btn-yolo");
+
+    if (mode === "yolo") {
+        img.src = "/video_feed_yolo";
+        img.style.visibility = lastYoloSignal ? "visible" : "hidden";
+        btnYolo.classList.add("active");
+        btnRaw.classList.remove("active");
+    } else {
+        img.style.visibility = "visible";
+        img.src = "/video_feed";
+        btnRaw.classList.add("active");
+        btnYolo.classList.remove("active");
+    }
+}
+
 async function updateStatus() {
     try {
         const res = await fetch("/api/status");
@@ -111,6 +137,11 @@ async function updateStatus() {
         const room = document.getElementById("room-" + data.current_room);
         if (room) {
             room.classList.add("active-room");
+        }
+
+        lastYoloSignal = data.yolo_signal;
+        if (currentVideoMode === "yolo") {
+            document.getElementById("video-img").style.visibility = data.yolo_signal ? "visible" : "hidden";
         }
 
         document.getElementById("robot-status").innerText = data.robot_status;
