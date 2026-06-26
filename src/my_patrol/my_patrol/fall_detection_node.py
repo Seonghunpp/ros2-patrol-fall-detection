@@ -14,11 +14,13 @@
 
 import cv2
 import logging
+import time  # * 디버그용 타이밍 로그 *
 import numpy as np
 from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy  # * 성능 최적화 수정 *
 
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String, Bool
@@ -104,11 +106,16 @@ class FallDetectionNode(Node):
         # 꺼지면 YOLO를 돌리지 않아 CPU·카메라 렉 절약.
         self.enabled = True
 
+        image_qos = QoSProfile(  # * 성능 최적화 수정 *
+            depth=1,  # * 성능 최적화 수정 *
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,  # * 성능 최적화 수정 *
+            history=QoSHistoryPolicy.KEEP_LAST,  # * 성능 최적화 수정 *
+        )  # * 성능 최적화 수정 *
         self.image_sub = self.create_subscription(
             CompressedImage,
             "/image_raw/compressed",
             self.image_callback,
-            10,
+            image_qos,  # * 성능 최적화 수정 *
         )
         self.create_service(SetBool, "fall_enable", self.enable_callback)
 
@@ -136,6 +143,8 @@ class FallDetectionNode(Node):
         if not self.enabled:
             return
 
+        t0 = time.time()  # * 디버그용 타이밍 로그 *
+
         np_arr = np.frombuffer(msg.data, np.uint8)
         frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
@@ -145,7 +154,11 @@ class FallDetectionNode(Node):
 
         frame_h, frame_w = frame.shape[:2]
 
-        results = self.model(frame, conf=0.5, verbose=False)
+        t1 = time.time()  # * 디버그용 타이밍 로그 *
+
+        results = self.model(frame, conf=0.25, imgsz=320, verbose=False)  # * 성능 최적화 수정 *
+
+        t2 = time.time()  # * 디버그용 타이밍 로그 *
 
         person_detected = False
         final_status = "NO_PERSON"
@@ -246,6 +259,8 @@ class FallDetectionNode(Node):
             final_status = "NO_PERSON"
             final_fall_detected = False
 
+        t3 = time.time()  # * 디버그용 타이밍 로그 *
+
         status_msg = String()
         status_msg.data = final_status
         self.status_pub.publish(status_msg)
@@ -255,13 +270,19 @@ class FallDetectionNode(Node):
         self.fall_pub.publish(fall_msg)
 
         # 관절/박스가 그려진 영상을 토픽으로 발행 (대시보드 YOLO 영상 전환용)
-        ok, encoded = cv2.imencode(".jpg", frame)
+        ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])  # * 성능 최적화 수정 *
         if ok:
             annotated_msg = CompressedImage()
             annotated_msg.header = msg.header
             annotated_msg.format = "jpeg"
             annotated_msg.data = encoded.tobytes()
             self.annotated_image_pub.publish(annotated_msg)
+
+        t4 = time.time()  # * 디버그용 타이밍 로그 *
+        self.get_logger().info(  # * 디버그용 타이밍 로그 *
+            f"[TIMING] decode={t1 - t0:.3f}s infer={t2 - t1:.3f}s "
+            f"draw_loop={t3 - t2:.3f}s encode_pub={t4 - t3:.3f}s total={t4 - t0:.3f}s"
+        )
 
         # 테스트용: 관절/박스가 그려진 영상을 창으로 표시
         if self.show:
