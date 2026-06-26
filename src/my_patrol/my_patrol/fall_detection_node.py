@@ -5,7 +5,7 @@
 
 구독: /image_raw/compressed (sensor_msgs/CompressedImage)
 발행:
-    /fall_status   (std_msgs/String)  NO_PERSON / PERSON / FALL_LIKE / FALL
+    /fall_status   (std_msgs/String)  NO_PERSON / PERSON / FALL
     /fall_detected (std_msgs/Bool)    True=낙상 확정
 
 모델 경로는 ROS 파라미터 model_path 로 지정한다(기본: ~/yolov8n-pose.pt).
@@ -19,6 +19,7 @@ from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy  # * 성능 최적화 수정 *
 
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String, Bool
@@ -33,23 +34,21 @@ logging.getLogger("ultralytics").setLevel(logging.ERROR)
 class FallJudge:
     def __init__(
         self,
-        floor_ratio=0.55,
-        lie_ratio=1.0,
-        torso_ratio=0.6,
-        keypoint_conf=0.35,
-        threshold_count=20,
-    ):
-        self.floor_ratio = floor_ratio
+        lie_ratio=1.2, # 바운딩박스 가로/세로 비율이 이보다 크면 누움으로 판단
+        torso_ratio=1.0, # 몸통 관절(어깨↔엉덩이) 수평 여부 판단 기준 비율
+        keypoint_conf=0.45, # 관절 신뢰도 기준 (낮으면 수평 판단에서 제외)
+        threshold_count=10, # 연속 프레임 수평/누움 카운트가 이보다 크면 낙상으로 판단
+    ): 
         self.lie_ratio = lie_ratio
         self.torso_ratio = torso_ratio
         self.keypoint_conf = keypoint_conf
         self.threshold_count = threshold_count
-        self.fall_count = 0
+        self.fall_count = 0 # 연속 프레임 수평/누움 카운트
 
     def _is_torso_horizontal(self, keypoints, keypoint_scores):
-        required = (5, 6, 11, 12)
+        required = (5, 6, 11, 12) # 어깨/엉덩이 관절 인덱스 (좌/우)
 
-        if keypoints is None or keypoint_scores is None:
+        if keypoints is None or keypoint_scores is None: 
             return False
 
         if any(keypoint_scores[index] < self.keypoint_conf for index in required):
@@ -62,27 +61,15 @@ class FallJudge:
 
         return dx > dy * self.torso_ratio
 
-    def check(self, x1, y1, x2, y2, frame_h, keypoints, keypoint_scores):
+    def check(self, x1, y1, x2, y2, keypoints, keypoint_scores):
         person_w = x2 - x1
         person_h = y2 - y1
-        # 화면 위치(in_floor_area) 조건은 제거: 정면·저높이 카메라에선 바닥에 누운
-        # 사람이 화면 중앙에 잡혀서 위치 조건이 오히려 낙상을 막았음.
-        # 박스/몸통이 가로(누움)면 곧바로 낙상 후보로 본다.
         bbox_horizontal = person_w > person_h * self.lie_ratio
         torso_horizontal = self._is_torso_horizontal(keypoints, keypoint_scores)
 
         lying_pose = bbox_horizontal or torso_horizontal
-        fall_like = lying_pose
 
-        if fall_like:
-            self.fall_count += 1
-        else:
-            self.fall_count = 0
-
-        is_fall = self.fall_count >= self.threshold_count
-
-        return is_fall, fall_like, bbox_horizontal, torso_horizontal
-
+        return lying_pose, bbox_horizontal, torso_horizontal
 
 class FallDetectionNode(Node):
     def __init__(self):
@@ -93,10 +80,6 @@ class FallDetectionNode(Node):
         self.declare_parameter("model_path", default_model)
         model_path = self.get_parameter("model_path").get_parameter_value().string_value
 
-        # 테스트용 화면 표시 (관절/박스 그려진 영상 창). 연동 시엔 끄기.
-        self.declare_parameter("show", False)
-        self.show = self.get_parameter("show").get_parameter_value().bool_value
-
         self.model = YOLO(model_path)
         self.judge = FallJudge()
 
@@ -104,11 +87,16 @@ class FallDetectionNode(Node):
         # 꺼지면 YOLO를 돌리지 않아 CPU·카메라 렉 절약.
         self.enabled = True
 
+        image_qos = QoSProfile(  # * 성능 최적화 수정 *
+            depth=1,  # * 성능 최적화 수정 *
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,  # * 성능 최적화 수정 *
+            history=QoSHistoryPolicy.KEEP_LAST,  # * 성능 최적화 수정 *
+        )  # * 성능 최적화 수정 *
         self.image_sub = self.create_subscription(
             CompressedImage,
             "/image_raw/compressed",
             self.image_callback,
-            10,
+            image_qos,  # * 성능 최적화 수정 *
         )
         self.create_service(SetBool, "fall_enable", self.enable_callback)
 
@@ -143,9 +131,7 @@ class FallDetectionNode(Node):
             self.get_logger().warn("image decode failed")
             return
 
-        frame_h, frame_w = frame.shape[:2]
-
-        results = self.model(frame, conf=0.5, verbose=False)
+        results = self.model(frame, conf=0.3, imgsz=320, verbose=False)  # * 성능 최적화 수정 *
 
         person_detected = False
         final_status = "NO_PERSON"
@@ -164,11 +150,10 @@ class FallDetectionNode(Node):
             if getattr(keypoints, "xy", None) is None or len(keypoints.xy) == 0:
                 continue
 
-            keypoints_xy = keypoints.xy.cpu().numpy() if hasattr(keypoints.xy, "cpu") else np.array(keypoints.xy)
+            keypoints_xy = keypoints.xy.cpu().numpy() if hasattr(keypoints.xy, "cpu") else np.array(keypoints.xy) 
             keypoints_conf = keypoints.conf.cpu().numpy() if hasattr(keypoints.conf, "cpu") else np.array(keypoints.conf)
 
-            for index, box in enumerate(boxes):
-                # box 속성 안전하게 추출
+            for index, box in enumerate(boxes): 
                 try:
                     cls_id = int(box.cls[0])
                 except Exception:
@@ -178,7 +163,7 @@ class FallDetectionNode(Node):
                 except Exception:
                     conf = 1.0
 
-                if cls_id != 0 or conf < 0.25:
+                if cls_id != 0 or conf < 0.3:
                     continue
 
                 # 인덱스 범위 체크
@@ -189,12 +174,19 @@ class FallDetectionNode(Node):
                 xyxy = box.xyxy[0].cpu().numpy() if hasattr(box.xyxy, "cpu") else box.xyxy[0]
                 x1, y1, x2, y2 = map(int, xyxy)
 
-                is_fall, fall_like, bbox_horizontal, torso_horizontal = self.judge.check(
+                lying_pose, bbox_horizontal, torso_horizontal = self.judge.check(
                     x1, y1, x2, y2,
-                    frame_h,
                     keypoints_xy[index],
                     keypoints_conf[index],
+
                 )
+
+                if lying_pose:
+                    self.judge.fall_count += 1
+                else:
+                    self.judge.fall_count = 0
+
+                is_fall = self.judge.fall_count >= self.judge.threshold_count
 
                 person_detected = True
                 person_w = x2 - x1
@@ -205,11 +197,6 @@ class FallDetectionNode(Node):
                     color = (0, 0, 255)
                     final_status = "FALL"
                     final_fall_detected = True
-                elif fall_like:
-                    label = "FALL_LIKE"
-                    color = (0, 255, 255)
-                    final_status = "FALL_LIKE"
-                    final_fall_detected = False
                 else:
                     label = "PERSON"
                     color = (0, 255, 0)
@@ -220,7 +207,8 @@ class FallDetectionNode(Node):
 
                 text = (
                     f"{label} conf:{conf:.2f} "
-                    f"box:{int(bbox_horizontal)} pose:{int(torso_horizontal)}"
+                    f"box:{int(bbox_horizontal)} pose:{int(torso_horizontal)} "
+                    f"cnt:{self.judge.fall_count}" # 연속 수평/누움 카운트 표시
                 )
 
                 cv2.putText(
@@ -238,7 +226,7 @@ class FallDetectionNode(Node):
                     f"w={person_w}, h={person_h}, "
                     f"bbox_horizontal={bbox_horizontal}, "
                     f"torso_horizontal={torso_horizontal}, "
-                    f"fall_like={fall_like}, fall={is_fall}"
+                    f"fall={is_fall}"
                 )
 
         if not person_detected:
@@ -255,23 +243,13 @@ class FallDetectionNode(Node):
         self.fall_pub.publish(fall_msg)
 
         # 관절/박스가 그려진 영상을 토픽으로 발행 (대시보드 YOLO 영상 전환용)
-        ok, encoded = cv2.imencode(".jpg", frame)
+        ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])  # * 성능 최적화 수정 *
         if ok:
             annotated_msg = CompressedImage()
             annotated_msg.header = msg.header
             annotated_msg.format = "jpeg"
             annotated_msg.data = encoded.tobytes()
             self.annotated_image_pub.publish(annotated_msg)
-
-        # 테스트용: 관절/박스가 그려진 영상을 창으로 표시
-        if self.show:
-            cv2.putText(
-                frame, final_status, (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2,
-            )
-            cv2.imshow("fall_detection", frame)
-            cv2.waitKey(1)
-
 
 def main(args=None):
     rclpy.init(args=args)
@@ -284,8 +262,6 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        cv2.destroyAllWindows()
-
         if rclpy.ok():
             rclpy.shutdown()
 
