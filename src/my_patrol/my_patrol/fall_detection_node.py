@@ -14,7 +14,6 @@
 
 import cv2
 import logging
-import time  # * 디버그용 타이밍 로그 *
 import numpy as np
 from pathlib import Path
 
@@ -125,8 +124,6 @@ class FallDetectionNode(Node):
         if not self.enabled:
             return
 
-        t0 = time.time()  # * 디버그용 타이밍 로그 *
-
         np_arr = np.frombuffer(msg.data, np.uint8)
         frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
@@ -134,17 +131,7 @@ class FallDetectionNode(Node):
             self.get_logger().warn("image decode failed")
             return
 
-<<<<<<< HEAD
         results = self.model(frame, conf=0.3, imgsz=320, verbose=False)  # * 성능 최적화 수정 *
-=======
-        frame_h, frame_w = frame.shape[:2]
-
-        t1 = time.time()  # * 디버그용 타이밍 로그 *
-
-        results = self.model(frame, conf=0.25, imgsz=320, verbose=False)  # * 성능 최적화 수정 *
-
-        t2 = time.time()  # * 디버그용 타이밍 로그 *
->>>>>>> 084a623c15076a97f25cfa9469f658fc105f05a3
 
         person_detected = False
         final_status = "NO_PERSON"
@@ -247,8 +234,6 @@ class FallDetectionNode(Node):
             final_status = "NO_PERSON"
             final_fall_detected = False
 
-        t3 = time.time()  # * 디버그용 타이밍 로그 *
-
         status_msg = String()
         status_msg.data = final_status
         self.status_pub.publish(status_msg)
@@ -266,25 +251,6 @@ class FallDetectionNode(Node):
             annotated_msg.data = encoded.tobytes()
             self.annotated_image_pub.publish(annotated_msg)
 
-<<<<<<< HEAD
-=======
-        t4 = time.time()  # * 디버그용 타이밍 로그 *
-        self.get_logger().info(  # * 디버그용 타이밍 로그 *
-            f"[TIMING] decode={t1 - t0:.3f}s infer={t2 - t1:.3f}s "
-            f"draw_loop={t3 - t2:.3f}s encode_pub={t4 - t3:.3f}s total={t4 - t0:.3f}s"
-        )
-
-        # 테스트용: 관절/박스가 그려진 영상을 창으로 표시
-        if self.show:
-            cv2.putText(
-                frame, final_status, (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2,
-            )
-            cv2.imshow("fall_detection", frame)
-            cv2.waitKey(1)
-
-
->>>>>>> 084a623c15076a97f25cfa9469f658fc105f05a3
 def main(args=None):
     rclpy.init(args=args)
 
