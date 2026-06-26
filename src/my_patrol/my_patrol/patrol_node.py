@@ -44,6 +44,7 @@ class MarkerListener(Node):
     SCAN_HALF = 50.0      # 낙상 스캔 시 중앙 기준 좌/우 각도(deg) — 45~60 권장
     SCAN_SPEED = 0.2      # 낙상 스캔 회전속도(rad/s) — 느리게(YOLO 감지 시간 확보)
     HOLD_SEC = 3.0        # 사람 감지 시 멈춰 응시할 최대 시간(s)
+    HOLD_CLEAR_SEC = 10.0 # 낙상 정지 후, 낙상이 이만큼 연속으로 안 보여야 '사라짐'(복귀)
 
     def __init__(self):
         super().__init__('patrol_marker_listener')
@@ -218,8 +219,27 @@ class MarkerListener(Node):
             if self._rotate_by(delta):
                 found = True
                 break
-        self.set_fall_enable(False)         # 낙상 감지 OFF
+        # 낙상 발견 시엔 끄지 않음 — hold_position에서 계속 응시해야 하므로
+        if not found:
+            self.set_fall_enable(False)     # 낙상 감지 OFF
         return found
+
+    def hold_position(self):
+        """낙상 환자를 향한 채 정지 유지. 낙상이 HOLD_CLEAR_SEC초 동안
+        연속으로 안 보이면(사라진 것으로 보고) 복귀한다. YOLO 깜빡임 대비."""
+        self.set_fall_enable(True)          # 환자 계속 응시 (YOLO ON)
+        clear_since = None                  # 낙상이 사라지기 시작한 시각
+        while rclpy.ok():
+            rclpy.spin_once(self, timeout_sec=0.05)
+            self.cmd_pub.publish(Twist())   # 제자리 정지 유지
+            if self.fall:
+                clear_since = None          # 아직 낙상 → 타이머 리셋
+            else:
+                if clear_since is None:
+                    clear_since = time.time()
+                elif time.time() - clear_since >= self.HOLD_CLEAR_SEC:
+                    break                   # 10초 연속 안 보임 → 사라짐
+        self.set_fall_enable(False)         # 복귀하며 감지 OFF
 
 
 def load_rooms(path):
@@ -324,6 +344,10 @@ def main():
                 if not check_patient(nav, marker, name):
                     nav.get_logger().warn(f'{name} fall suspected — alarm')
                     # 여기에 알람 동작(소리/메시지/호출) 추가
+                    # 낙상 환자를 계속 응시한 채 정지 → 사라지면(10초) 순찰 재개
+                    nav.get_logger().info(f'   Holding on patient until cleared...')
+                    marker.hold_position()
+                    nav.get_logger().info(f'   Patient cleared — resuming patrol')
 
                 # ── 5. 복도로 나오기 (다음 병실로 가기 전 복도 복귀) ──
                 if hall is not None:
