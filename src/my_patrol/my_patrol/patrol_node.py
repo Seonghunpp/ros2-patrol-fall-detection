@@ -225,8 +225,8 @@ class MarkerListener(Node):
         return found
 
     def hold_position(self):
-        """낙상 환자를 향한 채 정지 유지. 낙상이 HOLD_CLEAR_SEC초 동안
-        연속으로 안 보이면(사라진 것으로 보고) 복귀한다. YOLO 깜빡임 대비."""
+        """낙상 환자를 향한 채 정지 유지. 낙상이 10초 동안
+        연속으로 안 보이면 복귀."""
         self.set_fall_enable(True)          # 환자 계속 응시 (YOLO ON)
         clear_since = None                  # 낙상이 사라지기 시작한 시각
         while rclpy.ok():
