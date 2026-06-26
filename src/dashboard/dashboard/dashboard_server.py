@@ -5,6 +5,7 @@ from flask import Flask, Response, jsonify, render_template
 try:
     import rclpy
     from rclpy.node import Node
+    from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy  # * 성능 최적화 수정 *
     from sensor_msgs.msg import CompressedImage, BatteryState #배터리 스테이트 추가
     from std_msgs.msg import String
     from nav_msgs.msg import Odometry
@@ -55,18 +56,24 @@ class DashboardBridge(Node):
     def __init__(self):
         super().__init__("dashboard_bridge")
 
+        image_qos = QoSProfile(  # * 성능 최적화 수정 *
+            depth=1,  # * 성능 최적화 수정 *
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,  # * 성능 최적화 수정 *
+            history=QoSHistoryPolicy.KEEP_LAST,  # * 성능 최적화 수정 *
+        )  # * 성능 최적화 수정 *
+
         self.create_subscription(
             CompressedImage,
             "/image_raw/compressed",
             self.image_callback,
-            10
+            image_qos,  # * 성능 최적화 수정 *
         )
 
         self.create_subscription(
             CompressedImage,
             "/image_annotated/compressed",
             self.annotated_image_callback,
-            10
+            image_qos,  # * 성능 최적화 수정 *
         )
 
         self.create_subscription(
