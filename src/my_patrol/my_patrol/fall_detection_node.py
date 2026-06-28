@@ -1,4 +1,8 @@
-"""Fall detection node based on YOLOv8-pose."""
+# 기존 코드랑 병합
+# 낙상 판단 카운트를 사람 박스마다 증가시키지 않고, 프레임 단위로 한 번만 증가하게 정리
+# 한 프레임 안에서 누운 자세가 하나라도 있으면 fall_count += 1
+# 누운 자세가 없거나 사람이 없으면 fall_count = 0
+# fall_count가 임계값 이상일 때만 /fall_status = FALL, /fall_detected = True
 
 import cv2
 import logging
