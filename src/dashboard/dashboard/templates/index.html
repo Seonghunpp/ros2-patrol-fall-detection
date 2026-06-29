@@ -22,6 +22,7 @@
         <div class="card-title">실시간 영상</div>
         <div class="video-box">
             <img id="video-img" src="/video_feed" alt="실시간 영상">
+            <div class="detect-line"></div>
             <div class="live-badge">LIVE</div>
         </div>
         <div class="video-toggle">
@@ -125,17 +126,20 @@ function switchVideo(mode) {
     const img = document.getElementById("video-img");
     const btnRaw = document.getElementById("btn-raw");
     const btnYolo = document.getElementById("btn-yolo");
+    const detectLine = document.querySelector(".detect-line");
 
     if (mode === "yolo") {
         img.src = "/video_feed_yolo";
         img.style.visibility = lastYoloSignal ? "visible" : "hidden";
         btnYolo.classList.add("active");
         btnRaw.classList.remove("active");
+        if (detectLine) detectLine.style.display = "block";  // 분석 영상에만 중앙선 표시
     } else {
         img.style.visibility = "visible";
         img.src = "/video_feed";
         btnRaw.classList.add("active");
         btnYolo.classList.remove("active");
+        if (detectLine) detectLine.style.display = "none";   // 원본 영상은 깨끗하게
     }
 }
 

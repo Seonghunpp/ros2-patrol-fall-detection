@@ -93,6 +93,19 @@ body {
     background: #111827;
 }
 
+.detect-line {
+    display: none;             /* 기본 숨김. 분석(YOLO) 영상일 때만 JS로 표시 */
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;                 /* fall_detection_node 의 detect_line_ratio(기본 0.5)와 맞춤 */
+    height: 2px;
+    background: #3b82f6;       /* 파란색 감지 기준선 */
+    transform: translateY(-50%);
+    pointer-events: none;      /* 클릭 통과 */
+    z-index: 5;
+}
+
 .live-badge {
     position: absolute;
     left: 14px;
