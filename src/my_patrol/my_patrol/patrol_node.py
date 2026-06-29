@@ -2,10 +2,9 @@
 """병실 순찰 노드.
 
 rooms.yaml에 저장된 병실들을 Nav2로 순서대로 무한 순찰
-각 병실에 도착할 때마다 check_patient()를 호출하므로, 여기에 낙상 감지
-로직을 나중에 추가하
 
-  ros2 run my_patrol patrol
+실행 명령어
+- ros2 run my_patrol patrol
 """
 import math
 import os
@@ -63,7 +62,7 @@ class MarkerListener(Node):
         self.aruco_cli = self.create_client(SetBool, 'aruco_enable')
         self.fall_cli = self.create_client(SetBool, 'fall_enable')
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
-
+    
     def _id_cb(self, msg):
         self.latest_ids = list(msg.data)
 
