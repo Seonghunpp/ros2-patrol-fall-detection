@@ -59,7 +59,7 @@ class FallJudge:
         bbox_horizontal = person_w > person_h * self.lie_ratio
         torso_horizontal = self._is_torso_horizontal(keypoints, keypoint_scores)
 
-        lying_pose = bbox_horizontal or torso_horizontal
+        lying_pose = bbox_horizontal and torso_horizontal
 
         return lying_pose, bbox_horizontal, torso_horizontal
 
@@ -74,6 +74,12 @@ class FallDetectionNode(Node):
 
         self.model = YOLO(model_path)
         self.judge = FallJudge()
+
+        # 감지선: 화면 높이 * 비율 아래쪽(발 기준)만 감지 (0.5 = 화면 중간)
+        self.declare_parameter("detect_line_ratio", 0.5)
+        self.detect_line_ratio = (
+            self.get_parameter("detect_line_ratio").get_parameter_value().double_value
+        )
 
         self.enabled = True
 
@@ -120,6 +126,9 @@ class FallDetectionNode(Node):
             self.get_logger().warn("image decode failed")
             return
 
+        # 감지선 y좌표 (발=박스 하단 y2가 이 선 아래인 사람만 감지)
+        line_y = int(frame.shape[0] * self.detect_line_ratio)
+
         results = self.model(frame, conf=0.3, imgsz=320, verbose=False)
 
         person_detected = False
@@ -163,6 +172,17 @@ class FallDetectionNode(Node):
                 if conf < 0.3:
                     continue
 
+                xyxy = (
+                    box.xyxy[0].cpu().numpy()
+                    if hasattr(box.xyxy, "cpu")
+                    else box.xyxy[0]
+                )
+                x1, y1, x2, y2 = map(int, xyxy)
+
+                # 발(박스 하단 y2)이 감지선 위쪽이면 감지하지 않는다
+                if y2 < line_y:
+                    continue
+
                 person_detected = True
 
                 # keypoint 존재 여부로 유효한 감지 판단 (Pose 모델은 사람만 탐지)
@@ -171,13 +191,6 @@ class FallDetectionNode(Node):
 
                 if index >= len(keypoints_xy) or index >= len(keypoints_conf):
                     continue
-
-                xyxy = (
-                    box.xyxy[0].cpu().numpy()
-                    if hasattr(box.xyxy, "cpu")
-                    else box.xyxy[0]
-                )
-                x1, y1, x2, y2 = map(int, xyxy)
 
                 lying_pose, bbox_horizontal, torso_horizontal = self.judge.check(
                     x1,
@@ -248,6 +261,8 @@ class FallDetectionNode(Node):
                 f"torso_horizontal={torso_horizontal}, "
                 f"fall={final_fall_detected}"
             )
+
+        # 감지 기준선은 대시보드 웹화면에 CSS로 표시한다(영상에 박지 않음).
 
         status_msg = String()
         status_msg.data = final_status
