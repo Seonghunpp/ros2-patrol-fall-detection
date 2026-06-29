@@ -75,7 +75,6 @@ class FallDetectionNode(Node):
     def __init__(self):
         super().__init__("fall_detection_node")
 
-        # 모델 경로는 파라미터로 (패키지 밖 고정 위치 권장 → colcon 빌드/ git 영향 없음)
         default_model = str(Path.home() / "yolov8n-pose.pt")
         self.declare_parameter("model_path", default_model)
         model_path = self.get_parameter("model_path").get_parameter_value().string_value
@@ -83,8 +82,6 @@ class FallDetectionNode(Node):
         self.model = YOLO(model_path)
         self.judge = FallJudge()
 
-        # 외부(patrol)에서 켜고 끔. 기본 ON(단독 테스트용).
-        # 꺼지면 YOLO를 돌리지 않아 CPU·카메라 렉 절약.
         self.enabled = True
 
         image_qos = QoSProfile(  # * 성능 최적화 수정 *
@@ -112,15 +109,14 @@ class FallDetectionNode(Node):
     def enable_callback(self, request, response):
         self.enabled = request.data
         if self.enabled:
-            self.judge.fall_count = 0   # 켤 때 누적 초기화
+            self.judge.fall_count = 0
         state = "ON" if self.enabled else "OFF"
-        self.get_logger().info(f'fall detection {state}')
+        self.get_logger().info(f"fall detection {state}")
         response.success = True
-        response.message = f'fall detection {state}'
+        response.message = f"fall detection {state}"
         return response
 
     def image_callback(self, msg):
-        # 꺼져 있으면 디코딩·YOLO 자체를 건너뜀 → CPU 절약
         if not self.enabled:
             return
 
@@ -134,6 +130,7 @@ class FallDetectionNode(Node):
         results = self.model(frame, conf=0.3, imgsz=320, verbose=False)  # * 성능 최적화 수정 *
 
         person_detected = False
+        frame_has_lying_pose = False
         final_status = "NO_PERSON"
         final_fall_detected = False
 
@@ -166,12 +163,14 @@ class FallDetectionNode(Node):
                 if cls_id != 0 or conf < 0.3:
                     continue
 
-                # 인덱스 범위 체크
                 if index >= len(keypoints_xy) or index >= len(keypoints_conf):
                     continue
 
-                # box.xyxy may be a tensor of shape (1,4) — 안전하게 추출
-                xyxy = box.xyxy[0].cpu().numpy() if hasattr(box.xyxy, "cpu") else box.xyxy[0]
+                xyxy = (
+                    box.xyxy[0].cpu().numpy()
+                    if hasattr(box.xyxy, "cpu")
+                    else box.xyxy[0]
+                )
                 x1, y1, x2, y2 = map(int, xyxy)
 
                 lying_pose, bbox_horizontal, torso_horizontal = self.judge.check(
@@ -200,8 +199,6 @@ class FallDetectionNode(Node):
                 else:
                     label = "PERSON"
                     color = (0, 255, 0)
-                    final_status = "PERSON"
-                    final_fall_detected = False
 
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
@@ -233,6 +230,18 @@ class FallDetectionNode(Node):
             self.judge.fall_count = 0
             final_status = "NO_PERSON"
             final_fall_detected = False
+        else:
+            if frame_has_lying_pose:
+                self.judge.fall_count += 1
+            else:
+                self.judge.fall_count = 0
+
+            if self.judge.fall_count >= self.judge.threshold_count:
+                final_status = "FALL"
+                final_fall_detected = True
+            else:
+                final_status = "PERSON"
+                final_fall_detected = False
 
         status_msg = String()
         status_msg.data = final_status

@@ -39,11 +39,6 @@
                 <span>좌측 상단</span>
             </div>
 
-            <div class="corridor">
-                <span>중앙 복도</span>
-                <div class="robot-marker">🤖</div>
-            </div>
-
             <div class="room" id="room-102">
                 <strong>병실 102</strong>
                 <span>우측 상단</span>
@@ -54,14 +49,12 @@
                 <span>좌측 하단</span>
             </div>
 
-            <div class="corridor lower">
-                <span>이동 경로</span>
-            </div>
-
             <div class="room" id="room-104">
                 <strong>병실 104</strong>
                 <span>우측 하단</span>
             </div>
+
+            <div class="robot-marker" id="robot-marker" style="display: none;">🤖</div>  <!-- * 로봇 위치 추적 수정 * -->
         </div>
     </section>
 
@@ -156,8 +149,13 @@ async function updateStatus() {
         });
 
         const room = document.getElementById("room-" + data.current_room);
+        const robotMarker = document.getElementById("robot-marker");  // * 로봇 위치 추적 수정 *
         if (room) {
             room.classList.add("active-room");
+            room.appendChild(robotMarker);  // * 로봇 위치 추적 수정 *
+            robotMarker.style.display = "block";  // * 로봇 위치 추적 수정 *
+        } else {
+            robotMarker.style.display = "none";  // * 로봇 위치 추적 수정 *
         }
 
         lastYoloSignal = data.yolo_signal;
@@ -177,7 +175,8 @@ async function updateStatus() {
         document.getElementById("battery").innerText = data.battery;
         document.getElementById("camera").innerText = data.camera;
         document.getElementById("network").innerText = data.network;
-        document.getElementById("current-room-text").innerText = "병실 " + data.current_room;
+        document.getElementById("current-room-text").innerText =  // * 로봇 위치 추적 수정 *
+            room ? "병실 " + data.current_room : "위치 확인 중";  // * 로봇 위치 추적 수정 *
 
         const log = document.getElementById("event-log");
         log.innerHTML = "";

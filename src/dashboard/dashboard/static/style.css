@@ -137,12 +137,13 @@ body {
 .map {
     height: calc(100% - 42px);
     display: grid;
-    grid-template-columns: 1fr 0.58fr 1fr;
+    grid-template-columns: 1fr 1fr;
     grid-template-rows: 1fr 1fr;
     gap: 12px;
 }
 
 .room {
+    position: relative;  /* * 로봇 위치 추적 수정 * */
     border: 2px solid #d1d5db;
     background: #f8fafc;
     border-radius: 14px;
@@ -171,21 +172,6 @@ body {
 
 .active-room strong {
     color: #047857;
-}
-
-.corridor {
-    background: #e0f2fe;
-    border: 2px dashed #60a5fa;
-    border-radius: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-}
-
-.corridor span {
-    color: #2563eb;
-    font-weight: 800;
 }
 
 .robot-marker {

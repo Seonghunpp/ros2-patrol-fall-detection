@@ -7,7 +7,7 @@ try:
     from rclpy.node import Node
     from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy  # * 성능 최적화 수정 *
     from sensor_msgs.msg import CompressedImage, BatteryState #배터리 스테이트 추가
-    from std_msgs.msg import String
+    from std_msgs.msg import String, Int32MultiArray  # * 병실 위치 연동 수정 *
     from nav_msgs.msg import Odometry
     from geometry_msgs.msg import Twist
     ROS_AVAILABLE = True
@@ -34,8 +34,16 @@ last_cmd_vel_linear = 0.0
 last_cmd_vel_angular = 0.0
 last_cmd_vel_time = 0.0
 
+# 마커 ID -> 병실 번호 매핑. 실제 인쇄한 마커 ID에 맞게 값 수정  # * 병실 위치 연동 수정 *
+MARKER_TO_ROOM = {  # * 병실 위치 연동 수정 *
+    0: "101",  # * 병실 위치 연동 수정 *
+    1: "102",  # * 병실 위치 연동 수정 *
+    2: "103",  # * 병실 위치 연동 수정 *
+    3: "104",  # * 병실 위치 연동 수정 *
+}  # * 병실 위치 연동 수정 *
+
 state = {
-    "current_room": "102",
+    "current_room": None,  # * 로봇 위치 추적 수정 *
     "robot_status": "대기 중",
     "fall_status": "정상",
     "battery": "배터리 대기",
@@ -76,12 +84,12 @@ class DashboardBridge(Node):
             image_qos,  # * 성능 최적화 수정 *
         )
 
-        self.create_subscription(
-            String,
-            "/current_room",
-            self.room_callback,
-            10
-        )
+        self.create_subscription(  # * 병실 위치 연동 수정 *
+            Int32MultiArray,  # * 병실 위치 연동 수정 *
+            "/room_marker",  # * 병실 위치 연동 수정 *
+            self.room_marker_callback,  # * 병실 위치 연동 수정 *
+            10  # * 병실 위치 연동 수정 *
+        )  # * 병실 위치 연동 수정 *
 
         self.create_subscription(
             String,
@@ -142,10 +150,16 @@ class DashboardBridge(Node):
         global latest_annotated_frame
         latest_annotated_frame = bytes(msg.data)
 
-    def room_callback(self, msg):
-        old_room = state["current_room"]
-        new_room = str(msg.data).strip()
-        state["current_room"] = new_room
+    def room_marker_callback(self, msg):  # * 병실 위치 연동 수정 *
+        if not msg.data:  # * 병실 위치 연동 수정 *
+            return  # * 병실 위치 연동 수정 *
+
+        new_room = MARKER_TO_ROOM.get(msg.data[0])  # * 병실 위치 연동 수정 *
+        if new_room is None:  # * 병실 위치 연동 수정 *
+            return  # * 병실 위치 연동 수정 *
+
+        old_room = state["current_room"]  # * 병실 위치 연동 수정 *
+        state["current_room"] = new_room  # * 병실 위치 연동 수정 *
 
         if old_room != new_room:
             add_event(f"로봇이 병실 {new_room}에 입장했습니다.")
@@ -185,15 +199,14 @@ class DashboardBridge(Node):
             add_event(f"로봇 상태 변경: {new_status}")
 
     def fall_status_callback(self, msg):
+        raw_status = str(msg.data).strip()  # * 알림 문구 수정 *
         old_status = state["fall_status"]
-        new_status = str(msg.data).strip()
+        new_status = "낙상 환자 발견" if raw_status == "FALL" else "정상"  # * 알림 문구 수정 *
         state["fall_status"] = new_status
 
-        if old_status != new_status:
-            add_event(f"병실 {state['current_room']} 낙상 감지: {new_status}")
-
-        if new_status == "FALL" and old_status != "FALL":  # * 팝업 부분 수정 *
-            state["fall_alert_id"] += 1  # * 팝업 부분 수정 *
+        if new_status == "낙상 환자 발견" and old_status != "낙상 환자 발견":  # * 알림 문구 수정 *
+            add_event(f"병실 {state['current_room']} 낙상 환자 발견")  # * 알림 문구 수정 *
+            state["fall_alert_id"] += 1
 
     def battery_callback(self, msg):
         global last_heartbeat
