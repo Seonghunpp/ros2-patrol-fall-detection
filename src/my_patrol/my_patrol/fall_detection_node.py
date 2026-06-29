@@ -133,6 +133,7 @@ class FallDetectionNode(Node):
         frame_has_lying_pose = False
         final_status = "NO_PERSON"
         final_fall_detected = False
+        detected_persons = []  # 카운트 확정 후 한꺼번에 그리기 위해 모아둔다
 
         for result in results:
             frame = result.plot(boxes=False, labels=False)
@@ -180,52 +181,22 @@ class FallDetectionNode(Node):
 
                 )
 
+                # 카운트는 박스 루프에서 건드리지 않는다.
+                # 프레임에 누운 사람이 한 명이라도 있는지만 표시한다.
                 if lying_pose:
-                    self.judge.fall_count += 1
-                else:
-                    self.judge.fall_count = 0
-
-                is_fall = self.judge.fall_count >= self.judge.threshold_count
+                    frame_has_lying_pose = True
 
                 person_detected = True
                 person_w = x2 - x1
                 person_h = y2 - y1
 
-                if is_fall:
-                    label = "FALL"
-                    color = (0, 0, 255)
-                    final_status = "FALL"
-                    final_fall_detected = True
-                else:
-                    label = "PERSON"
-                    color = (0, 255, 0)
-
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-
-                text = (
-                    f"{label} conf:{conf:.2f} "
-                    f"box:{int(bbox_horizontal)} pose:{int(torso_horizontal)} "
-                    f"cnt:{self.judge.fall_count}" # 연속 수평/누움 카운트 표시
+                detected_persons.append(
+                    (x1, y1, x2, y2, conf, bbox_horizontal, torso_horizontal, person_w, person_h)
                 )
 
-                cv2.putText(
-                    frame,
-                    text,
-                    (x1, max(y1 - 10, 20)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    color,
-                    2,
-                )
-
-                self.get_logger().info(
-                    f"person conf={conf:.2f}, "
-                    f"w={person_w}, h={person_h}, "
-                    f"bbox_horizontal={bbox_horizontal}, "
-                    f"torso_horizontal={torso_horizontal}, "
-                    f"fall={is_fall}"
-                )
-
+        # ----- 카운트는 프레임 단위로 딱 한 번만 갱신 -----
+        # 누운 사람이 한 명이라도 있으면 누적, 아무도 안 누웠을 때만 0으로 리셋.
+        # → 누운 사람이 있는 동안 다른 사람이 추가로 잡혀도 카운트가 리셋되지 않는다.
         if not person_detected:
             self.judge.fall_count = 0
             final_status = "NO_PERSON"
@@ -242,6 +213,38 @@ class FallDetectionNode(Node):
             else:
                 final_status = "PERSON"
                 final_fall_detected = False
+
+        # ----- 카운트가 확정된 뒤 박스/라벨을 그린다 -----
+        label = "FALL" if final_fall_detected else "PERSON"
+        color = (0, 0, 255) if final_fall_detected else (0, 255, 0)
+
+        for (x1, y1, x2, y2, conf, bbox_horizontal, torso_horizontal,
+             person_w, person_h) in detected_persons:
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+
+            text = (
+                f"{label} conf:{conf:.2f} "
+                f"box:{int(bbox_horizontal)} pose:{int(torso_horizontal)} "
+                f"cnt:{self.judge.fall_count}"  # 프레임 단위 수평/누움 카운트
+            )
+
+            cv2.putText(
+                frame,
+                text,
+                (x1, max(y1 - 10, 20)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                color,
+                2,
+            )
+
+            self.get_logger().info(
+                f"person conf={conf:.2f}, "
+                f"w={person_w}, h={person_h}, "
+                f"bbox_horizontal={bbox_horizontal}, "
+                f"torso_horizontal={torso_horizontal}, "
+                f"fall={final_fall_detected}"
+            )
 
         status_msg = String()
         status_msg.data = final_status
