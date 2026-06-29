@@ -1,16 +1,8 @@
-"""낙상 감지 노드 (YOLOv8-pose 기반)
-
-압축 영상(/image_raw/compressed)을 직접 구독해 사람을 감지하고,
-바운딩박스 비율 + 몸통 관절(어깨↔엉덩이) 수평 여부로 낙상을 판단한다.
-
-구독: /image_raw/compressed (sensor_msgs/CompressedImage)
-발행:
-    /fall_status   (std_msgs/String)  NO_PERSON / PERSON / FALL
-    /fall_detected (std_msgs/Bool)    True=낙상 확정
-
-모델 경로는 ROS 파라미터 model_path 로 지정한다(기본: ~/yolov8n-pose.pt).
-공식 모델이면 없을 때 ultralytics가 자동 다운로드한다.
-"""
+# 기존 코드랑 병합
+# 낙상 판단 카운트를 사람 박스마다 증가시키지 않고, 프레임 단위로 한 번만 증가하게 정리
+# 한 프레임 안에서 누운 자세가 하나라도 있으면 fall_count += 1
+# 누운 자세가 없거나 사람이 없으면 fall_count = 0
+# fall_count가 임계값 이상일 때만 /fall_status = FALL, /fall_detected = True
 
 import cv2
 import logging
@@ -19,7 +11,7 @@ from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy  # * 성능 최적화 수정 *
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String, Bool
@@ -38,17 +30,17 @@ class FallJudge:
         torso_ratio=1.0, # 몸통 관절(어깨↔엉덩이) 수평 여부 판단 기준 비율
         keypoint_conf=0.45, # 관절 신뢰도 기준 (낮으면 수평 판단에서 제외)
         threshold_count=10, # 연속 프레임 수평/누움 카운트가 이보다 크면 낙상으로 판단
-    ): 
+    ):
         self.lie_ratio = lie_ratio
         self.torso_ratio = torso_ratio
         self.keypoint_conf = keypoint_conf
         self.threshold_count = threshold_count
-        self.fall_count = 0 # 연속 프레임 수평/누움 카운트
+        self.fall_count = 0
 
     def _is_torso_horizontal(self, keypoints, keypoint_scores):
-        required = (5, 6, 11, 12) # 어깨/엉덩이 관절 인덱스 (좌/우)
+        required = (5, 6, 11, 12)
 
-        if keypoints is None or keypoint_scores is None: 
+        if keypoints is None or keypoint_scores is None:
             return False
 
         if any(keypoint_scores[index] < self.keypoint_conf for index in required):
@@ -71,6 +63,7 @@ class FallJudge:
 
         return lying_pose, bbox_horizontal, torso_horizontal
 
+
 class FallDetectionNode(Node):
     def __init__(self):
         super().__init__("fall_detection_node")
@@ -84,16 +77,16 @@ class FallDetectionNode(Node):
 
         self.enabled = True
 
-        image_qos = QoSProfile(  # * 성능 최적화 수정 *
-            depth=1,  # * 성능 최적화 수정 *
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,  # * 성능 최적화 수정 *
-            history=QoSHistoryPolicy.KEEP_LAST,  # * 성능 최적화 수정 *
-        )  # * 성능 최적화 수정 *
+        image_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+        )
         self.image_sub = self.create_subscription(
             CompressedImage,
             "/image_raw/compressed",
             self.image_callback,
-            image_qos,  # * 성능 최적화 수정 *
+            image_qos,
         )
         self.create_service(SetBool, "fall_enable", self.enable_callback)
 
@@ -127,7 +120,7 @@ class FallDetectionNode(Node):
             self.get_logger().warn("image decode failed")
             return
 
-        results = self.model(frame, conf=0.3, imgsz=320, verbose=False)  # * 성능 최적화 수정 *
+        results = self.model(frame, conf=0.3, imgsz=320, verbose=False)
 
         person_detected = False
         frame_has_lying_pose = False
@@ -148,20 +141,32 @@ class FallDetectionNode(Node):
             if getattr(keypoints, "xy", None) is None or len(keypoints.xy) == 0:
                 continue
 
-            keypoints_xy = keypoints.xy.cpu().numpy() if hasattr(keypoints.xy, "cpu") else np.array(keypoints.xy) 
-            keypoints_conf = keypoints.conf.cpu().numpy() if hasattr(keypoints.conf, "cpu") else np.array(keypoints.conf)
+            keypoints_xy = (
+                keypoints.xy.cpu().numpy()
+                if hasattr(keypoints.xy, "cpu")
+                else np.array(keypoints.xy)
+            )
+            keypoints_conf = None
+            if getattr(keypoints, "conf", None) is not None:
+                keypoints_conf = (
+                    keypoints.conf.cpu().numpy()
+                    if hasattr(keypoints.conf, "cpu")
+                    else np.array(keypoints.conf)
+                )
 
-            for index, box in enumerate(boxes): 
-                try:
-                    cls_id = int(box.cls[0])
-                except Exception:
-                    cls_id = 0
+            for index, box in enumerate(boxes):
                 try:
                     conf = float(box.conf[0])
                 except Exception:
                     conf = 1.0
 
-                if cls_id != 0 or conf < 0.3:
+                if conf < 0.3:
+                    continue
+
+                person_detected = True
+
+                # keypoint 존재 여부로 유효한 감지 판단 (Pose 모델은 사람만 탐지)
+                if keypoints_conf is None:
                     continue
 
                 if index >= len(keypoints_xy) or index >= len(keypoints_conf):
@@ -175,18 +180,19 @@ class FallDetectionNode(Node):
                 x1, y1, x2, y2 = map(int, xyxy)
 
                 lying_pose, bbox_horizontal, torso_horizontal = self.judge.check(
-                    x1, y1, x2, y2,
+                    x1,
+                    y1,
+                    x2,
+                    y2,
                     keypoints_xy[index],
                     keypoints_conf[index],
-
                 )
 
                 # 카운트는 박스 루프에서 건드리지 않는다.
-                # 프레임에 누운 사람이 한 명이라도 있는지만 표시한다.
+                # 프레임에 누운 사람이 한 명이라도 있는지만 표시하고, 그리기는 뒤로 미룬다.
                 if lying_pose:
                     frame_has_lying_pose = True
 
-                person_detected = True
                 person_w = x2 - x1
                 person_h = y2 - y1
 
@@ -194,9 +200,6 @@ class FallDetectionNode(Node):
                     (x1, y1, x2, y2, conf, bbox_horizontal, torso_horizontal, person_w, person_h)
                 )
 
-        # ----- 카운트는 프레임 단위로 딱 한 번만 갱신 -----
-        # 누운 사람이 한 명이라도 있으면 누적, 아무도 안 누웠을 때만 0으로 리셋.
-        # → 누운 사람이 있는 동안 다른 사람이 추가로 잡혀도 카운트가 리셋되지 않는다.
         if not person_detected:
             self.judge.fall_count = 0
             final_status = "NO_PERSON"
@@ -254,8 +257,7 @@ class FallDetectionNode(Node):
         fall_msg.data = final_fall_detected
         self.fall_pub.publish(fall_msg)
 
-        # 관절/박스가 그려진 영상을 토픽으로 발행 (대시보드 YOLO 영상 전환용)
-        ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])  # * 성능 최적화 수정 *
+        ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
         if ok:
             annotated_msg = CompressedImage()
             annotated_msg.header = msg.header
@@ -276,7 +278,6 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()
