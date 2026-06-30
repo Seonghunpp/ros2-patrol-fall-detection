@@ -129,7 +129,7 @@ class FallDetectionNode(Node):
         # 감지선 y좌표 (발=박스 하단 y2가 이 선 아래인 사람만 감지)
         line_y = int(frame.shape[0] * self.detect_line_ratio)
 
-        results = self.model(frame, conf=0.3, imgsz=320, verbose=False)
+        results = self.model(frame, conf=0.3, imgsz=512, verbose=False)  # 사진 등 작은 대상 인식 위해 320->512
 
         person_detected = False
         frame_has_lying_pose = False
@@ -272,7 +272,7 @@ class FallDetectionNode(Node):
         fall_msg.data = final_fall_detected
         self.fall_pub.publish(fall_msg)
 
-        ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+        ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
         if ok:
             annotated_msg = CompressedImage()
             annotated_msg.header = msg.header
