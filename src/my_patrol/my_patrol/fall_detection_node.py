@@ -28,7 +28,7 @@ class FallJudge:
         self,
         lie_ratio=1.2, # 바운딩박스 가로/세로 비율이 이보다 크면 누움으로 판단
         torso_ratio=1.0, # 몸통 관절(어깨↔엉덩이) 수평 여부 판단 기준 비율
-        keypoint_conf=0.45, # 관절 신뢰도 기준 (낮으면 수평 판단에서 제외)
+        keypoint_conf=0.25, # 관절 신뢰도 기준 (낮으면 수평 판단에서 제외)
         threshold_count=10, # 연속 프레임 수평/누움 카운트가 이보다 크면 낙상으로 판단
     ):
         self.lie_ratio = lie_ratio
@@ -75,8 +75,9 @@ class FallDetectionNode(Node):
         self.model = YOLO(model_path)
         self.judge = FallJudge()
 
-        # 감지선: 화면 높이 * 비율 아래쪽(발 기준)만 감지 (0.5 = 화면 중간)
-        self.declare_parameter("detect_line_ratio", 0.5)
+        # 감지선: 화면 높이 * 비율 아래쪽(발 기준)만 감지
+        # 0.67 = 화면 위에서 2/3 지점 → 위 2/3는 감지 안 함, 아래 1/3만 감지
+        self.declare_parameter("detect_line_ratio", 0.67)
         self.detect_line_ratio = (
             self.get_parameter("detect_line_ratio").get_parameter_value().double_value
         )
@@ -129,7 +130,7 @@ class FallDetectionNode(Node):
         # 감지선 y좌표 (발=박스 하단 y2가 이 선 아래인 사람만 감지)
         line_y = int(frame.shape[0] * self.detect_line_ratio)
 
-        results = self.model(frame, conf=0.3, imgsz=512, verbose=False)  # 사진 등 작은 대상 인식 위해 320->512
+        results = self.model(frame, conf=0.25, imgsz=640, verbose=False)  # 사진 등 작은 대상 인식 위해 320->512
 
         person_detected = False
         frame_has_lying_pose = False
@@ -169,7 +170,7 @@ class FallDetectionNode(Node):
                 except Exception:
                     conf = 1.0
 
-                if conf < 0.3:
+                if conf < 0.25:
                     continue
 
                 xyxy = (
