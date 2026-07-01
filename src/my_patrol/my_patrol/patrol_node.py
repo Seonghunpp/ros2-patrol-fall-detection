@@ -204,10 +204,11 @@ class MarkerListener(Node):
         self.cmd_pub.publish(Twist())
         return False
 
-    def scan_for_fall(self):
+    def scan_for_fall(self, name=''):
         """마커 중앙 기준 좌우(±SCAN_HALF)로 천천히 훑으며 낙상 감지.
         낙상이 보이면 True, 끝까지 없으면 False. 끝나면 중앙 복귀.
         스캔 동안만 YOLO를 켜고(주행 중엔 꺼서 CPU·렉 절약) 끝나면 끈다."""
+        self.get_logger().info(f'[{name}] Checking patient (scanning)...')
         self.fall = False
         self.status = 'NO_PERSON'
         self.set_fall_enable(True)          # 낙상 감지 ON
@@ -280,17 +281,6 @@ def go_to(nav, point, label):
     return False
 
 
-def check_patient(nav, marker, name):
-    """병실 도착(마커 정렬 후) 환자(낙상) 감지.
-
-    마커 중앙 기준 좌우로 천천히 훑으며 /fall_detected를 감시한다.
-    반환: True=정상, False=낙상 의심(알람)
-    """
-    nav.get_logger().info(f'[{name}] Checking patient (scanning)...')
-    fall = marker.scan_for_fall()
-    return not fall   # 낙상 감지되면 False(알람)
-
-
 def main():
     rclpy.init()
     nav = BasicNavigator()
@@ -340,7 +330,7 @@ def main():
                     nav.get_logger().warn('   Marker not found (search failed)')
 
                 # ── 4. 환자(낙상) 감지 ──
-                if not check_patient(nav, marker, name):
+                if marker.scan_for_fall(name):
                     nav.get_logger().warn(f'{name} fall suspected — alarm')
                     # 여기에 알람 동작(소리/메시지/호출) 추가
                     # 낙상 환자를 계속 응시한 채 정지 → 사라지면(10초) 순찰 재개
