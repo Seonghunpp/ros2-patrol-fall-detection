@@ -1,6 +1,8 @@
+import json
+import os
 import threading
 import time
-from flask import Flask, Response, jsonify, render_template
+from flask import Flask, Response, jsonify, render_template, request
 
 try:
     import rclpy
@@ -261,6 +263,149 @@ def api_status():
     # 분석 프레임을 한 번이라도 받은 적 있으면 계속 true (꺼져도 마지막 프레임 유지)
     state["yolo_signal"] = latest_annotated_frame is not None
     return jsonify(state)
+
+
+# ===== 캘린더 일정: 서버 JSON 파일에 저장 (여러 브라우저가 같은 일정을 공유) =====
+EVENTS_FILE = os.path.expanduser("~/dashboard_events.json")
+events_lock = threading.Lock()
+
+
+def load_events():
+    # 반환 형식: { "YYYY-MM-DD": [ {"id": <int>, "text": <str>}, ... ], ... }
+    if not os.path.exists(EVENTS_FILE):
+        return {}
+    try:
+        with open(EVENTS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_events(events):
+    with open(EVENTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(events, f, ensure_ascii=False, indent=2)
+
+
+@app.route("/api/events", methods=["GET"])
+def api_events_get():
+    with events_lock:
+        return jsonify(load_events())
+
+
+@app.route("/api/events", methods=["POST"])
+def api_events_add():
+    body = request.get_json(silent=True) or {}
+    date = str(body.get("date", "")).strip()
+    text = str(body.get("text", "")).strip()
+    if not date or not text:
+        return jsonify({"ok": False, "error": "date와 text가 필요합니다"}), 400
+
+    with events_lock:
+        events = load_events()
+        event = {"id": int(time.time() * 1000), "text": text}
+        events.setdefault(date, []).append(event)
+        save_events(events)
+    return jsonify({"ok": True, "date": date, "event": event})
+
+
+@app.route("/api/events/delete", methods=["POST"])
+def api_events_delete():
+    body = request.get_json(silent=True) or {}
+    date = str(body.get("date", "")).strip()
+    event_id = body.get("id")
+
+    with events_lock:
+        events = load_events()
+        if date in events:
+            events[date] = [e for e in events[date] if e.get("id") != event_id]
+            if not events[date]:
+                del events[date]
+            save_events(events)
+    return jsonify({"ok": True})
+
+
+# ===== 체크리스트 / 메모: 서버 JSON 파일에 저장 (여러 브라우저 공유) =====
+NOTES_FILE = os.path.expanduser("~/dashboard_notes.json")
+notes_lock = threading.Lock()
+
+
+def load_notes():
+    # 형식: { "checklist": [ {"id": <int>, "text": <str>, "done": <bool>} ], "memo": <str> }
+    default = {"checklist": [], "memo": ""}
+    if not os.path.exists(NOTES_FILE):
+        return default
+    try:
+        with open(NOTES_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return default
+        data.setdefault("checklist", [])
+        data.setdefault("memo", "")
+        return data
+    except Exception:
+        return default
+
+
+def save_notes(notes):
+    with open(NOTES_FILE, "w", encoding="utf-8") as f:
+        json.dump(notes, f, ensure_ascii=False, indent=2)
+
+
+@app.route("/api/notes", methods=["GET"])
+def api_notes_get():
+    with notes_lock:
+        return jsonify(load_notes())
+
+
+@app.route("/api/checklist/add", methods=["POST"])
+def api_checklist_add():
+    body = request.get_json(silent=True) or {}
+    text = str(body.get("text", "")).strip()
+    if not text:
+        return jsonify({"ok": False, "error": "text가 필요합니다"}), 400
+    with notes_lock:
+        notes = load_notes()
+        item = {"id": int(time.time() * 1000), "text": text, "done": False}
+        notes["checklist"].append(item)
+        save_notes(notes)
+    return jsonify({"ok": True, "item": item})
+
+
+@app.route("/api/checklist/toggle", methods=["POST"])
+def api_checklist_toggle():
+    body = request.get_json(silent=True) or {}
+    item_id = body.get("id")
+    with notes_lock:
+        notes = load_notes()
+        for it in notes["checklist"]:
+            if it.get("id") == item_id:
+                it["done"] = not it.get("done", False)
+                break
+        save_notes(notes)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/checklist/delete", methods=["POST"])
+def api_checklist_delete():
+    body = request.get_json(silent=True) or {}
+    item_id = body.get("id")
+    with notes_lock:
+        notes = load_notes()
+        notes["checklist"] = [it for it in notes["checklist"] if it.get("id") != item_id]
+        save_notes(notes)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/memo", methods=["POST"])
+def api_memo_save():
+    body = request.get_json(silent=True) or {}
+    memo = str(body.get("memo", ""))
+    with notes_lock:
+        notes = load_notes()
+        notes["memo"] = memo
+        save_notes(notes)
+    return jsonify({"ok": True})
 
 
 def ros_spin():

@@ -7,22 +7,35 @@
 </head>
 <body>
 <header class="header">
-    <div style="display:flex; align-items:center; gap:40px;">
-        <div>
-            <h1>병실 모니터링 대시보드</h1>
-            <p>실시간 영상 · 병실 위치 · 로봇 상태 · 낙상 감지</p>
+    <div class="header-left">
+        <div class="title-wrap">
+            <div class="title-icon">🏥</div>
+            <div>
+                <h1>병실 모니터링 대시보드</h1>
+                <p>실시간 영상 · 병실 위치 · 로봇 상태 · 낙상 감지</p>
+            </div>
         </div>
-        <div id="clock" style="
-            font-size:34px; font-weight:800; font-family:'Courier New', monospace;
-            color:#2563eb; letter-spacing:3px;
-            background:#eff6ff; border:1.5px solid #bfdbfe;
-            border-radius:14px; padding:8px 22px;
-            box-shadow:0 2px 8px rgba(37,99,235,0.10);
-        "></div>
+        <div id="clock" class="clock-box">
+            <div class="clock-date" id="clock-date"></div>
+            <div class="clock-time" id="clock-time"></div>
+        </div>
     </div>
-    <div class="header-status">
-        <span class="dot"></span>
-        시스템 연결
+    <div class="header-right">
+        <button class="tool-btn" id="btn-calendar" title="캘린더" onclick="openCalendar()">📅</button>
+        <button class="tool-btn" id="btn-checklist" title="할 일 체크리스트" onclick="openChecklist()">✅</button>
+        <button class="tool-btn" id="btn-memo" title="메모지" onclick="openMemo()">📝</button>
+        <div class="theme-wrap">
+            <button class="tool-btn" id="btn-theme" title="테마 색상" onclick="toggleThemeMenu()">🎨</button>
+            <div class="theme-menu" id="theme-menu">
+                <div class="theme-menu-title">테마 선택</div>
+                <div class="theme-list" id="theme-list"></div>
+            </div>
+        </div>
+        <div class="header-status">
+            <span class="dot"></span>
+            시스템 연결
+        </div>
+        <button class="logout-btn" onclick="logout()">로그아웃</button>
     </div>
 </header>
 
@@ -116,16 +129,127 @@
     </div>
 </div>
 
+<!-- ===== 캘린더 모달 ===== -->
+<div id="cal-overlay" class="cal-overlay" onclick="if(event.target===this)closeCalendar()">
+    <div class="cal-box">
+        <button class="cal-close" onclick="closeCalendar()">&times;</button>
+        <div class="cal-head">
+            <button class="cal-nav" onclick="calPrev()">‹</button>
+            <div class="cal-title" id="cal-title"></div>
+            <button class="cal-nav" onclick="calNext()">›</button>
+        </div>
+        <div class="cal-weekdays">
+            <div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+
+        <div class="cal-day-detail" id="cal-day-detail" style="display:none;">
+            <div class="cal-day-detail-head">
+                <strong id="cal-detail-date"></strong>
+                <button class="cal-close" style="position:static;" onclick="closeDayDetail()">&times;</button>
+            </div>
+            <div class="cal-event-list" id="cal-event-list"></div>
+            <div class="cal-add">
+                <input id="cal-event-input" type="text" placeholder="일정 입력 후 Enter 또는 추가">
+                <button onclick="addEvent()">추가</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== 할 일 체크리스트 모달 ===== -->
+<div id="checklist-overlay" class="cal-overlay" onclick="if(event.target===this)closeChecklist()">
+    <div class="cal-box" style="width:min(480px,92vw);">
+        <button class="cal-close" onclick="closeChecklist()">&times;</button>
+        <div class="panel-title">✅ 할 일 체크리스트</div>
+        <div class="cal-add" style="margin-bottom:14px;">
+            <input id="checklist-input" type="text" placeholder="할 일 입력 후 Enter 또는 추가">
+            <button onclick="addChecklistItem()">추가</button>
+        </div>
+        <div id="checklist-list" class="checklist-list"></div>
+    </div>
+</div>
+
+<!-- ===== 로그인 ===== -->
+<div id="login-overlay" class="login-overlay">
+    <div class="login-box">
+        <div class="login-icon">🏥</div>
+        <div class="login-title">병실 모니터링 대시보드</div>
+        <div class="login-sub">로그인이 필요합니다</div>
+        <input id="login-id" class="login-input" type="text" placeholder="아이디" autocomplete="username">
+        <input id="login-pw" class="login-input" type="password" placeholder="비밀번호" autocomplete="current-password">
+        <label class="login-remember">
+            <input id="login-auto" type="checkbox"> 자동 로그인
+        </label>
+        <div id="login-error" class="login-error"></div>
+        <button class="login-btn" onclick="doLogin()">로그인</button>
+    </div>
+</div>
+
+<!-- ===== 메모지 모달 ===== -->
+<div id="memo-overlay" class="cal-overlay" onclick="if(event.target===this)closeMemo()">
+    <div class="cal-box" style="width:min(520px,92vw);">
+        <button class="cal-close" onclick="closeMemo()">&times;</button>
+        <div class="panel-title">📝 메모지 <span id="memo-saved" class="memo-saved"></span></div>
+        <textarea id="memo-text" class="memo-text" placeholder="전달사항·인수인계 메모를 자유롭게 적어주세요"></textarea>
+        <div class="cal-add" style="justify-content:flex-end;">
+            <button onclick="saveMemo()">저장</button>
+        </div>
+    </div>
+</div>
+
 <script>
 function updateClock() {
     const now = new Date();
     const h = String(now.getHours()).padStart(2, '0');
     const m = String(now.getMinutes()).padStart(2, '0');
     const s = String(now.getSeconds()).padStart(2, '0');
-    document.getElementById("clock").innerText = `${h}:${m}:${s}`;
+    const wd = ["일", "월", "화", "수", "목", "금", "토"][now.getDay()];
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} (${wd})`;
+    document.getElementById("clock-time").innerText = `${h}:${m}:${s}`;
+    document.getElementById("clock-date").innerText = dateStr;
 }
 setInterval(updateClock, 1000);
 updateClock();
+
+// ===== 로그인 (테스트용: admin / 1234, DB 미사용) =====
+const AUTH_KEY = "dashboard-auth";
+
+function isAuthed() {
+    return localStorage.getItem(AUTH_KEY) === "1" || sessionStorage.getItem(AUTH_KEY) === "1";
+}
+
+function doLogin() {
+    const id = document.getElementById("login-id").value.trim();
+    const pw = document.getElementById("login-pw").value;
+    const auto = document.getElementById("login-auto").checked;
+    if (id === "admin" && pw === "1234") {
+        // 자동 로그인 체크 → localStorage(영구), 미체크 → sessionStorage(세션 종료 시 만료)
+        if (auto) localStorage.setItem(AUTH_KEY, "1");
+        else sessionStorage.setItem(AUTH_KEY, "1");
+        document.getElementById("login-error").innerText = "";
+        document.getElementById("login-pw").value = "";
+        document.getElementById("login-overlay").style.display = "none";
+    } else {
+        document.getElementById("login-error").innerText = "아이디 또는 비밀번호가 올바르지 않습니다.";
+    }
+}
+
+function logout() {
+    localStorage.removeItem(AUTH_KEY);
+    sessionStorage.removeItem(AUTH_KEY);
+    document.getElementById("login-overlay").style.display = "flex";
+}
+
+// 진입 시 인증 확인 (되어 있으면 로그인창 숨김)
+if (isAuthed()) {
+    document.getElementById("login-overlay").style.display = "none";
+}
+// Enter 키로 로그인
+["login-id", "login-pw"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+});
 
 let currentVideoMode = "raw";
 let lastYoloSignal = false;
@@ -218,6 +342,316 @@ async function updateStatus() {
 
 setInterval(updateStatus, 1000);
 updateStatus();
+
+// ===== 테마 =====
+const THEMES = [
+    { id: "light",    name: "라이트",     dot: "#ffffff" },
+    { id: "dark",     name: "다크",       dot: "#1e293b" },
+    { id: "sky",      name: "스카이",     dot: "#0ea5e9" },
+    { id: "mint",     name: "민트",       dot: "#10b981" },
+    { id: "lavender", name: "라벤더",     dot: "#8b5cf6" },
+    { id: "peach",    name: "피치",       dot: "#f97316" },
+    { id: "rose",     name: "로즈",       dot: "#e11d48" },
+    { id: "sand",     name: "샌드",       dot: "#d97706" },
+    { id: "graphite", name: "그래파이트", dot: "#2a2e33" },
+    { id: "ocean",    name: "오션",       dot: "#123642" },
+];
+
+function applyTheme(id) {
+    document.body.setAttribute("data-theme", id);
+    localStorage.setItem("dashboard-theme", id);
+    renderThemeList();
+}
+
+function renderThemeList() {
+    const cur = document.body.getAttribute("data-theme") || "light";
+    const list = document.getElementById("theme-list");
+    list.innerHTML = "";
+    THEMES.forEach(t => {
+        const el = document.createElement("div");
+        el.className = "theme-swatch" + (t.id === cur ? " selected" : "");
+        el.onclick = () => applyTheme(t.id);
+        el.innerHTML = `<span class="theme-dot" style="background:${t.dot}"></span>${t.name}`;
+        list.appendChild(el);
+    });
+}
+
+function toggleThemeMenu() {
+    document.getElementById("theme-menu").classList.toggle("open");
+}
+
+// 메뉴 바깥 클릭 시 닫기
+document.addEventListener("click", (e) => {
+    const wrap = document.querySelector(".theme-wrap");
+    if (wrap && !wrap.contains(e.target)) {
+        document.getElementById("theme-menu").classList.remove("open");
+    }
+});
+
+// 저장된 테마 적용
+document.body.setAttribute("data-theme", localStorage.getItem("dashboard-theme") || "light");
+renderThemeList();
+
+// ===== 캘린더 =====
+let calYear, calMonth;   // calMonth: 0-based
+let calEvents = {};
+let calSelectedDate = null;
+
+function pad2(n) { return String(n).padStart(2, "0"); }
+function dateKey(y, m, d) { return `${y}-${pad2(m + 1)}-${pad2(d)}`; }
+
+async function fetchEvents() {
+    try {
+        const res = await fetch("/api/events");
+        calEvents = await res.json();
+    } catch (e) {
+        calEvents = {};
+        console.error(e);
+    }
+}
+
+async function openCalendar() {
+    const now = new Date();
+    if (calYear === undefined) { calYear = now.getFullYear(); calMonth = now.getMonth(); }
+    await fetchEvents();
+    renderCalendar();
+    closeDayDetail();
+    document.getElementById("cal-overlay").classList.add("open");
+}
+
+function closeCalendar() {
+    document.getElementById("cal-overlay").classList.remove("open");
+}
+
+function calPrev() { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); }
+function calNext() { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); }
+
+function renderCalendar() {
+    document.getElementById("cal-title").innerText = `${calYear}년 ${calMonth + 1}월`;
+    const grid = document.getElementById("cal-grid");
+    grid.innerHTML = "";
+
+    const first = new Date(calYear, calMonth, 1).getDay(); // 0=일
+    const days = new Date(calYear, calMonth + 1, 0).getDate();
+    const today = new Date();
+    const isThisMonth = today.getFullYear() === calYear && today.getMonth() === calMonth;
+
+    for (let i = 0; i < first; i++) {
+        const empty = document.createElement("div");
+        empty.className = "cal-day empty";
+        grid.appendChild(empty);
+    }
+
+    for (let d = 1; d <= days; d++) {
+        const key = dateKey(calYear, calMonth, d);
+        const dow = new Date(calYear, calMonth, d).getDay();
+        const cell = document.createElement("div");
+        cell.className = "cal-day" + (dow === 0 ? " sun" : dow === 6 ? " sat" : "") +
+            (isThisMonth && today.getDate() === d ? " today" : "");
+        const count = (calEvents[key] || []).length;
+        cell.innerHTML = `<div class="day-num">${d}</div>` +
+            (count ? `<span class="cal-badge">${count}</span>` : "");
+        cell.onclick = () => openDayDetail(key);
+        grid.appendChild(cell);
+    }
+}
+
+function openDayDetail(key) {
+    calSelectedDate = key;
+    document.getElementById("cal-detail-date").innerText = key;
+    document.getElementById("cal-day-detail").style.display = "block";
+    renderDayEvents();
+    document.getElementById("cal-event-input").focus();
+}
+
+function closeDayDetail() {
+    calSelectedDate = null;
+    document.getElementById("cal-day-detail").style.display = "none";
+}
+
+function renderDayEvents() {
+    const list = document.getElementById("cal-event-list");
+    list.innerHTML = "";
+    const items = calEvents[calSelectedDate] || [];
+    if (items.length === 0) {
+        list.innerHTML = `<div class="cal-empty-msg">등록된 일정이 없습니다.</div>`;
+        return;
+    }
+    items.forEach(ev => {
+        const row = document.createElement("div");
+        row.className = "cal-event-row";
+        row.innerHTML = `<p></p><button title="삭제">&times;</button>`;
+        row.querySelector("p").innerText = ev.text;
+        row.querySelector("button").onclick = () => deleteEvent(ev.id);
+        list.appendChild(row);
+    });
+}
+
+async function addEvent() {
+    const input = document.getElementById("cal-event-input");
+    const text = input.value.trim();
+    if (!text || !calSelectedDate) return;
+    try {
+        const res = await fetch("/api/events", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ date: calSelectedDate, text }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            (calEvents[calSelectedDate] = calEvents[calSelectedDate] || []).push(data.event);
+            input.value = "";
+            renderDayEvents();
+            renderCalendar();
+        }
+    } catch (e) { console.error(e); }
+}
+
+async function deleteEvent(id) {
+    if (!calSelectedDate) return;
+    try {
+        await fetch("/api/events/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ date: calSelectedDate, id }),
+        });
+        calEvents[calSelectedDate] = (calEvents[calSelectedDate] || []).filter(e => e.id !== id);
+        renderDayEvents();
+        renderCalendar();
+    } catch (e) { console.error(e); }
+}
+
+// Enter 키로 일정 추가
+const calInput = document.getElementById("cal-event-input");
+if (calInput) calInput.addEventListener("keydown", e => { if (e.key === "Enter") addEvent(); });
+
+// ===== 할 일 체크리스트 =====
+let checklistData = [];
+
+async function fetchNotes() {
+    try {
+        const res = await fetch("/api/notes");
+        return await res.json();
+    } catch (e) {
+        console.error(e);
+        return { checklist: [], memo: "" };
+    }
+}
+
+async function openChecklist() {
+    const notes = await fetchNotes();
+    checklistData = notes.checklist || [];
+    renderChecklist();
+    document.getElementById("checklist-overlay").classList.add("open");
+    document.getElementById("checklist-input").focus();
+}
+
+function closeChecklist() {
+    document.getElementById("checklist-overlay").classList.remove("open");
+}
+
+function renderChecklist() {
+    const list = document.getElementById("checklist-list");
+    list.innerHTML = "";
+    if (checklistData.length === 0) {
+        list.innerHTML = `<div class="cal-empty-msg">할 일이 없습니다.</div>`;
+        return;
+    }
+    checklistData.forEach(it => {
+        const row = document.createElement("div");
+        row.className = "check-row" + (it.done ? " done" : "");
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = !!it.done;
+        box.onchange = () => toggleChecklistItem(it.id);
+        const p = document.createElement("p");
+        p.innerText = it.text;
+        const del = document.createElement("button");
+        del.innerHTML = "&times;";
+        del.title = "삭제";
+        del.onclick = () => deleteChecklistItem(it.id);
+        row.appendChild(box);
+        row.appendChild(p);
+        row.appendChild(del);
+        list.appendChild(row);
+    });
+}
+
+async function addChecklistItem() {
+    const input = document.getElementById("checklist-input");
+    const text = input.value.trim();
+    if (!text) return;
+    try {
+        const res = await fetch("/api/checklist/add", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            checklistData.push(data.item);
+            input.value = "";
+            renderChecklist();
+        }
+    } catch (e) { console.error(e); }
+}
+
+async function toggleChecklistItem(id) {
+    try {
+        await fetch("/api/checklist/toggle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id }),
+        });
+        const it = checklistData.find(x => x.id === id);
+        if (it) it.done = !it.done;
+        renderChecklist();
+    } catch (e) { console.error(e); }
+}
+
+async function deleteChecklistItem(id) {
+    try {
+        await fetch("/api/checklist/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id }),
+        });
+        checklistData = checklistData.filter(x => x.id !== id);
+        renderChecklist();
+    } catch (e) { console.error(e); }
+}
+
+const checklistInput = document.getElementById("checklist-input");
+if (checklistInput) checklistInput.addEventListener("keydown", e => { if (e.key === "Enter") addChecklistItem(); });
+
+// ===== 메모지 =====
+async function openMemo() {
+    const notes = await fetchNotes();
+    document.getElementById("memo-text").value = notes.memo || "";
+    document.getElementById("memo-saved").innerText = "";
+    document.getElementById("memo-overlay").classList.add("open");
+}
+
+function closeMemo() {
+    document.getElementById("memo-overlay").classList.remove("open");
+}
+
+async function saveMemo() {
+    const memo = document.getElementById("memo-text").value;
+    try {
+        const res = await fetch("/api/memo", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ memo }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            const tag = document.getElementById("memo-saved");
+            tag.innerText = "저장됨";
+            setTimeout(() => { tag.innerText = ""; }, 1500);
+        }
+    } catch (e) { console.error(e); }
+}
 </script>
 </body>
 </html>
