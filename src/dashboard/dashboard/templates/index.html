@@ -7,9 +7,18 @@
 </head>
 <body>
 <header class="header">
-    <div>
-        <h1>병실 모니터링 대시보드</h1>
-        <p>실시간 영상 · 병실 위치 · 로봇 상태 · 낙상 감지</p>
+    <div style="display:flex; align-items:center; gap:40px;">
+        <div>
+            <h1>병실 모니터링 대시보드</h1>
+            <p>실시간 영상 · 병실 위치 · 로봇 상태 · 낙상 감지</p>
+        </div>
+        <div id="clock" style="
+            font-size:34px; font-weight:800; font-family:'Courier New', monospace;
+            color:#2563eb; letter-spacing:3px;
+            background:#eff6ff; border:1.5px solid #bfdbfe;
+            border-radius:14px; padding:8px 22px;
+            box-shadow:0 2px 8px rgba(37,99,235,0.10);
+        "></div>
     </div>
     <div class="header-status">
         <span class="dot"></span>
@@ -108,6 +117,16 @@
 </div>
 
 <script>
+function updateClock() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    const s = String(now.getSeconds()).padStart(2, '0');
+    document.getElementById("clock").innerText = `${h}:${m}:${s}`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
 let currentVideoMode = "raw";
 let lastYoloSignal = false;
 let lastSeenAlertId = null;  // * 팝업 부분 수정 *
@@ -188,7 +207,8 @@ async function updateStatus() {
         data.events.forEach(event => {
             const item = document.createElement("div");
             item.className = "event-item";
-            item.innerHTML = `<span>${event.time}</span><p>${event.text}</p>`;
+            const isFall = event.text.includes("낙상 환자 발견");
+            item.innerHTML = `<span>${event.time}</span><p style="${isFall ? 'color:#dc2626; font-weight:700;' : ''}">${event.text}</p>`;
             log.appendChild(item);
         });
     } catch (err) {

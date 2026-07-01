@@ -195,9 +195,6 @@ class DashboardBridge(Node):
         new_status = "이동 중" if (odom_moving or cmd_vel_moving) else "대기 중"
         state["robot_status"] = new_status
 
-        if old_status != new_status:
-            add_event(f"로봇 상태 변경: {new_status}")
-
     def fall_status_callback(self, msg):
         raw_status = str(msg.data).strip()  # * 알림 문구 수정 *
         old_status = state["fall_status"]
