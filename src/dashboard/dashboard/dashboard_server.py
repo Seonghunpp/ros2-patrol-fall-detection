@@ -94,13 +94,6 @@ class DashboardBridge(Node):
         )  # * 병실 위치 연동 수정 *
 
         self.create_subscription(
-            String,
-            "/robot_status",
-            self.robot_status_callback,
-            10
-        )
-
-        self.create_subscription(
             Odometry,
             "/odom",
             self.odom_callback,
@@ -165,9 +158,6 @@ class DashboardBridge(Node):
 
         if old_room != new_room:
             add_event(f"로봇이 병실 {new_room}에 입장했습니다.")
-
-    def robot_status_callback(self, msg):
-        state["robot_status"] = str(msg.data).strip()
 
     def odom_callback(self, msg):
         global last_heartbeat, last_odom_linear, last_odom_angular
